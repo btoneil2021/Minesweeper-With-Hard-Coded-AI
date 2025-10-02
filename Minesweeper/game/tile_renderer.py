@@ -21,9 +21,13 @@ class TileRenderer:
         py.draw.rect(screen, COLOR_BACKGROUND, (tile.x, tile.y, TILE_SIZE, TILE_SIZE))
     
     def _draw_hidden(self, screen, tile):
+        x_position = tile.x + TILE_SIZE//10
+        y_position = tile.y + TILE_SIZE//10
+        side_length = 4 * TILE_SIZE // 5
+
         py.draw.rect(screen, COLOR_TILE_HIDDEN, 
-                     (tile.x + TILE_SIZE//10, tile.y + TILE_SIZE//10, 
-                      4 * TILE_SIZE // 5, 4 * TILE_SIZE // 5))
+                     (x_position, y_position, 
+                      side_length, side_length))
     
     def _draw_number(self, screen, tile):
         textColor = NUMBER_COLORS.get(tile.val, COLOR_BLACK)
@@ -33,6 +37,6 @@ class TileRenderer:
     
     def _draw_image(self, screen, tile, resource_path):
         image = py.image.load(resource_path)
-        image = py.transform.scale(image, (TILE_SIZE*.8, TILE_SIZE*.8))
+        image = py.transform.scale(image, size=(TILE_SIZE*.8, TILE_SIZE*.8))
         image_rect = image.get_rect(center=(tile.x + TILE_SIZE // 2, tile.y + TILE_SIZE // 2))
         screen.blit(image, image_rect)

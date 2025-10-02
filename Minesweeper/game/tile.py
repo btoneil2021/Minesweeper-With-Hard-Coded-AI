@@ -10,7 +10,6 @@ class Tile:
         self.state = STATE_HIDDEN
         self.isBomb = isBomb
         self.val = value
-        self.font = py.font.Font(None, 30)
         self.renderer = TileRenderer()
 
     def draw(self, screen):
@@ -19,15 +18,11 @@ class Tile:
     def reveal(self):
         if self.state == STATE_HIDDEN and self.isBomb:
             self.state = STATE_BOMB
-            return
         elif self.state == STATE_HIDDEN:
             self.state = STATE_REVEALED
 
     def plantFlag(self):
         if self.state == STATE_HIDDEN:
             self.state = STATE_FLAGGED
-            return
         elif self.state != STATE_REVEALED:
             self.state = STATE_HIDDEN
-            return
-        return
