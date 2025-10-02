@@ -19,7 +19,7 @@ class Board:
         # Create all tiles
         for i in range(NUM_TILES_Y):
             for j in range(NUM_TILES_X):
-                self.dictionary[str((j, i))] = Tile(x=x, y=y)
+                self.dictionary[(j, i)] = Tile(x=x, y=y)
                 x += TILE_SIZE
             y += TILE_SIZE
             x = 0
@@ -29,18 +29,18 @@ class Board:
         def random_x_y():
             return (random.randint(0, NUM_TILES_X - 1),
                     random.randint(0, NUM_TILES_Y - 1))
-        
+
         for i in range(NUM_BOMBS):
             x, y = random_x_y()
-            while self.dictionary[str((x, y))].isBomb:
+            while self.dictionary[(x, y)].isBomb:
                 x, y = random_x_y()
-            self.dictionary[str((x, y))].isBomb = True
+            self.dictionary[(x, y)].isBomb = True
 
     def _initialize_values(self):
         """Calculate the number values for all non-bomb tiles"""
         for i in range(NUM_TILES_Y):
             for j in range(NUM_TILES_X):
-                if not self.dictionary[str((j, i))].isBomb:
+                if not self.dictionary[(j, i)].isBomb:
                     self._calculate_tile_value((j, i))
 
     def _calculate_tile_value(self, key):
@@ -49,14 +49,14 @@ class Board:
         neighbors = self._get_neighbors(key)
 
         for neighbor in neighbors:
-            if str(neighbor) not in self.dictionary:
+            if neighbor not in self.dictionary:
                 continue
-            if self.dictionary[str(neighbor)].isBomb:
+            if self.dictionary[neighbor].isBomb:
                 val += 1
 
         # Update the tile with calculated value
-        tile = self.dictionary[str(key)]
-        self.dictionary[str(key)] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb)
+        tile = self.dictionary[key]
+        self.dictionary[key] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb)
 
     def _get_neighbors(self, key):
         return [
@@ -72,4 +72,4 @@ class Board:
 
     def get_tile(self, key):
         """Get a tile by its coordinate key"""
-        return self.dictionary.get(str(key))
+        return self.dictionary.get(key)

@@ -19,11 +19,12 @@ class AIController:
         py.mouse.set_pos(key[0] * TILE_SIZE + (TILE_SIZE // 2),
                         key[1] * TILE_SIZE + (TILE_SIZE // 2))
 
+        tile = board.get_tile(key)
         if not right_click:
             # Left click - reveal tile
-            board.dictionary[str(key)].reveal()
-            if board.dictionary[str(key)].val == 0:
+            tile.reveal()
+            if tile.val == 0:
                 game_logic.reveal_zeros(key)
-        elif board.dictionary[str(key)].state != STATE_FLAGGED:
+        elif tile.state != STATE_FLAGGED:
             # Right click - flag tile
-            board.dictionary[str(key)].plantFlag()
+            tile.plantFlag()

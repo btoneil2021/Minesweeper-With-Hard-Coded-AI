@@ -30,44 +30,41 @@ class AIStrategy:
 
         # At the beginning, make random moves
         if not self.analyzer.are_there_zeros():
-            return (eval(self.first_moves()), False, can_be_evaluated)
+            return (self.first_moves(), False, can_be_evaluated)
 
         can_be_evaluated = True
 
         # Phase 1: Flag obvious bombs
-        for key_str in self.analyzer.copyDict.keys():
-            key = eval(key_str)
-            if self.analyzer.copyDict[key_str] in [AI_FLAGGED, AI_UNKNOWN]:
+        for key in self.analyzer.copyDict.keys():
+            if self.analyzer.copyDict[key] in [AI_FLAGGED, AI_UNKNOWN]:
                 continue
 
             tiles_to_flag = self.pattern_detector.same_bombs_as_squares(key)
             if tiles_to_flag is not None:
                 for flag_tile in tiles_to_flag:
-                    if str(flag_tile) in self.analyzer.copyDict:
-                        if self.analyzer.copyDict[str(flag_tile)] == AI_UNKNOWN:
+                    if flag_tile in self.analyzer.copyDict:
+                        if self.analyzer.copyDict[flag_tile] == AI_UNKNOWN:
                             return (flag_tile, True, can_be_evaluated)
 
         # Phase 2: Reveal obviously safe tiles
-        for key_str in self.analyzer.copyDict.keys():
-            key = eval(key_str)
-            if self.analyzer.copyDict[key_str] in [AI_FLAGGED, AI_UNKNOWN]:
+        for key in self.analyzer.copyDict.keys():
+            if self.analyzer.copyDict[key] in [AI_FLAGGED, AI_UNKNOWN]:
                 continue
 
             tiles_to_reveal = self.pattern_detector.all_bombs_found(key)
             if tiles_to_reveal is not None:
                 for reveal_tile in tiles_to_reveal:
-                    if str(reveal_tile) in self.analyzer.copyDict:
-                        if self.analyzer.copyDict[str(reveal_tile)] == AI_UNKNOWN:
+                    if reveal_tile in self.analyzer.copyDict:
+                        if self.analyzer.copyDict[reveal_tile] == AI_UNKNOWN:
                             return (reveal_tile, False, can_be_evaluated)
 
         # Phase 3: Use advanced transitive property detection
-        for key_str in self.analyzer.copyDict.keys():
-            key = eval(key_str)
-            if self.analyzer.copyDict[key_str] in [AI_FLAGGED, AI_UNKNOWN]:
+        for key in self.analyzer.copyDict.keys():
+            if self.analyzer.copyDict[key] in [AI_FLAGGED, AI_UNKNOWN]:
                 continue
 
             result = self.pattern_detector.transitive_bomb_property(key=key)
-            if result is not None and str(result) in self.analyzer.copyDict:
+            if result is not None and result in self.analyzer.copyDict:
                 # Negative coordinates indicate a flag action
                 if result[0] < 0 or result[1] < 0:
                     flag_pos = (-1 * result[0], -1 * result[1])
