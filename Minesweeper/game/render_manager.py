@@ -13,7 +13,6 @@ class RenderManager:
         self.screen.fill(COLOR_WHITE)
         board.draw(self.screen)
 
-        # Display win rate
         text = self.font.render(str(win_rate), True, COLOR_BLACK)
         self.screen.blit(text, (0, 0))
 

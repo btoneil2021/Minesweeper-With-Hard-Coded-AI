@@ -1,3 +1,5 @@
+import os
+
 # Game configuration
 NUM_BOMBS = 300
 NUM_TILES_X = 40
@@ -34,7 +36,6 @@ NUMBER_COLORS = {
 }
 
 # Resource paths
-import os
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCE_FLAG = os.path.join(_BASE_DIR, "resources", "flag.png")
 RESOURCE_BOMB = os.path.join(_BASE_DIR, "resources", "bomb.png")
