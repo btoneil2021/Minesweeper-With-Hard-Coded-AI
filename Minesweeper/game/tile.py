@@ -1,5 +1,6 @@
 import pygame as py
 from constants import *
+from .tile_renderer import TileRenderer
 
 
 class Tile:
@@ -10,26 +11,10 @@ class Tile:
         self.isBomb = isBomb
         self.val = value
         self.font = py.font.Font(None, 30)
+        self.renderer = TileRenderer()
 
     def draw(self, screen):
-        py.draw.rect(screen, COLOR_BACKGROUND, (self.x, self.y, TILE_SIZE, TILE_SIZE))
-        if self.state == STATE_HIDDEN:
-            py.draw.rect(screen, COLOR_TILE_HIDDEN, (self.x + TILE_SIZE//10, self.y + TILE_SIZE//10, 4 * TILE_SIZE // 5, 4 * TILE_SIZE // 5))
-        elif self.state == STATE_REVEALED and self.val != 0:
-            textColor = NUMBER_COLORS.get(self.val, COLOR_BLACK)
-            text = self.font.render(str(self.val), True, textColor)
-            text_rect = text.get_rect(center=(self.x + TILE_SIZE // 2, self.y + TILE_SIZE // 2))
-            screen.blit(text, text_rect)
-        elif self.state == STATE_FLAGGED:
-            flag = py.image.load(RESOURCE_FLAG)
-            flag = py.transform.scale(flag, (TILE_SIZE*.8, TILE_SIZE*.8))
-            image_rect = flag.get_rect(center=(self.x + TILE_SIZE // 2, self.y + TILE_SIZE // 2))
-            screen.blit(flag, image_rect)
-        elif self.state == STATE_BOMB:
-            bomb = py.image.load(RESOURCE_BOMB)
-            bomb = py.transform.scale(bomb, (TILE_SIZE*.8, TILE_SIZE*.8))
-            image_rect2 = bomb.get_rect(center=(self.x + TILE_SIZE // 2, self.y + TILE_SIZE // 2))
-            screen.blit(bomb, image_rect2)
+        self.renderer.draw_tile(screen, self)
 
     def reveal(self):
         if self.state == STATE_HIDDEN and self.isBomb:
