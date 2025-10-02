@@ -12,32 +12,26 @@ class GameLogic:
     def click_action(self, action):
         """Handle mouse click actions on the board"""
         pos = py.mouse.get_pos()
-        row = math.floor(pos[0] / TILE_SIZE)
-        col = math.floor(pos[1] / TILE_SIZE)
-        key = (row, col)
-        tile = self.board.get_tile(key)
+        coordinates = (pos[0] // TILE_SIZE, pos[1] // TILE_SIZE)
+        tile = self.board.get_tile(coordinates)
 
         if action == "left":
             tile.reveal()
             if tile.val == 0:
-                self.reveal_zeros(key)
+                self.reveal_zeros(coordinates)
         elif action == "right":
             tile.plantFlag()
 
-    def reveal_zeros(self, key):
+    def reveal_zeros(self, coordinates):
         """Recursively reveal all connected zero-value tiles"""
-        tile = self.board.get_tile(key)
+        tile = self.board.get_tile(coordinates)
         if not tile or tile.isBomb or tile.val != 0:
             return
 
-        neighbors = self.board._get_neighbors(key)
-
-        for neighbor in neighbors:
+        for neighbor in self.board._get_neighbors(coordinates):
             neighbor_tile = self.board.get_tile(neighbor)
-            if not neighbor_tile:
-                continue
-
-            if neighbor_tile.isBomb or neighbor_tile.state == STATE_REVEALED:
+            if not neighbor_tile or neighbor_tile.isBomb \
+                   or neighbor_tile.state == STATE_REVEALED:
                 continue
 
             neighbor_tile.state = STATE_REVEALED
