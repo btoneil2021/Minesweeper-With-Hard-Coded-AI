@@ -9,6 +9,7 @@ class Board:
     def __init__(self):
         self.dictionary = {}
         self._initialize_tiles()
+        self._initialize_bombs()
         self._initialize_values()
 
     def _initialize_tiles(self):
@@ -23,14 +24,16 @@ class Board:
             y += TILE_SIZE
             x = 0
 
-        # Place bombs randomly
+
+    def _initialize_bombs(self):
+        def random_x_y():
+            return (random.randint(0, NUM_TILES_X - 1),
+                    random.randint(0, NUM_TILES_Y - 1))
+        
         for i in range(NUM_BOMBS):
-            x = random.randint(0, NUM_TILES_X - 1)
-            y = random.randint(0, NUM_TILES_Y - 1)
-            # Ensure no duplicate bomb placement
+            x, y = random_x_y()
             while self.dictionary[str((x, y))].isBomb:
-                x = random.randint(0, NUM_TILES_X - 1)
-                y = random.randint(0, NUM_TILES_Y - 1)
+                x, y = random_x_y()
             self.dictionary[str((x, y))].isBomb = True
 
     def _initialize_values(self):
@@ -46,25 +49,20 @@ class Board:
         neighbors = self._get_neighbors(key)
 
         for neighbor in neighbors:
-            if str(neighbor) in self.dictionary:
-                if self.dictionary[str(neighbor)].isBomb:
-                    val += 1
+            if str(neighbor) not in self.dictionary:
+                continue
+            if self.dictionary[str(neighbor)].isBomb:
+                val += 1
 
         # Update the tile with calculated value
         tile = self.dictionary[str(key)]
         self.dictionary[str(key)] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb)
 
     def _get_neighbors(self, key):
-        """Get all 8 neighboring coordinates for a given tile"""
         return [
-            (key[0] + 1, key[1]),
-            (key[0], key[1] + 1),
-            (key[0] + 1, key[1] + 1),
-            (key[0] - 1, key[1]),
-            (key[0], key[1] - 1),
-            (key[0] - 1, key[1] - 1),
-            (key[0] - 1, key[1] + 1),
-            (key[0] + 1, key[1] - 1)
+            (key[0] - 1, key[1] - 1),  (key[0] - 1, key[1]),  (key[0] - 1, key[1] + 1),
+            (key[0],     key[1] - 1),                         (key[0],     key[1] + 1),
+            (key[0] + 1, key[1] - 1),  (key[0] + 1, key[1]),  (key[0] + 1, key[1] + 1),
         ]
 
     def draw(self, screen):
