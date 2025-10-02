@@ -1,9 +1,10 @@
 import random
 from constants import *
 from .tile import Tile
+from .neighbor_utils import NeighborUtils
 
 
-class Board:
+class Board(NeighborUtils):
     """Manages the minesweeper board state and tile initialization"""
 
     def __init__(self):
@@ -46,7 +47,7 @@ class Board:
     def _calculate_tile_value(self, key):
         """Calculate how many bombs surround a given tile"""
         val = 0
-        neighbors = self._get_neighbors(key)
+        neighbors = self.get_neighbors(key)
 
         for neighbor in neighbors:
             if neighbor not in self.dictionary:
@@ -57,13 +58,6 @@ class Board:
         # Update the tile with calculated value
         tile = self.dictionary[key]
         self.dictionary[key] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb)
-
-    def _get_neighbors(self, key):
-        return [
-            (key[0] - 1, key[1] - 1),  (key[0] - 1, key[1]),  (key[0] - 1, key[1] + 1),
-            (key[0],     key[1] - 1),                         (key[0],     key[1] + 1),
-            (key[0] + 1, key[1] - 1),  (key[0] + 1, key[1]),  (key[0] + 1, key[1] + 1),
-        ]
 
     def draw(self, screen):
         """Draw all tiles on the screen"""

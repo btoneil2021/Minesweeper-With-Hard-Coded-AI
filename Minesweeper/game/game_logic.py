@@ -16,27 +16,32 @@ class GameLogic:
         tile = self.board.get_tile(coordinates)
 
         if action == "left":
-            tile.reveal()
-            if tile.val == 0:
-                self.reveal_zeros(coordinates)
+            self.reveal_tile(coordinates)
         elif action == "right":
             tile.plantFlag()
 
-    def reveal_zeros(self, coordinates):
-        """Recursively reveal all connected zero-value tiles"""
+    def reveal_tile(self, coordinates):
+        """Reveal a tile and cascade if it's a zero-value tile"""
         tile = self.board.get_tile(coordinates)
-        if not tile or tile.isBomb or tile.val != 0:
+        if not tile or tile.state != STATE_HIDDEN:
             return
 
-        for neighbor in self.board._get_neighbors(coordinates):
+        tile.set_revealed()
+
+        if tile.val == 0:
+            self._reveal_zeros(coordinates)
+
+    def _reveal_zeros(self, coordinates):
+        """Recursively reveal all connected zero-value tiles"""
+        for neighbor in self.board.get_neighbors(coordinates):
             neighbor_tile = self.board.get_tile(neighbor)
             if not neighbor_tile or neighbor_tile.isBomb \
                    or neighbor_tile.state == STATE_REVEALED:
                 continue
 
-            neighbor_tile.state = STATE_REVEALED
+            neighbor_tile.set_revealed()
             if neighbor_tile.val == 0:
-                self.reveal_zeros(neighbor)
+                self._reveal_zeros(neighbor)
 
     def is_lost(self):
         """Check if the game is lost (bomb revealed)"""

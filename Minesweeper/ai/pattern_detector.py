@@ -12,24 +12,24 @@ class PatternDetector:
         Detects when the number of unknown squares equals the tile value
         This means all unknown squares must be bombs
         """
-        if key not in self.analyzer.copyDict:
+        if key not in self.analyzer.ai_board_state:
             return None
 
-        tile_value = self.analyzer.copyDict[key]
+        tile_value = self.analyzer.ai_board_state[key]
         open_square_number = 0
 
         for neighbor in self.analyzer.get_neighbors(key):
-            if neighbor not in self.analyzer.copyDict:
+            if neighbor not in self.analyzer.ai_board_state:
                 continue
-            if self.analyzer.copyDict[neighbor] in [AI_FLAGGED, AI_UNKNOWN]:
+            if self.analyzer.ai_board_state[neighbor] in [AI_FLAGGED, AI_UNKNOWN]:
                 open_square_number += 1
 
         if open_square_number == tile_value:
             tiles_to_update = []
             for neighbor in self.analyzer.get_neighbors(key):
-                if neighbor not in self.analyzer.copyDict:
+                if neighbor not in self.analyzer.ai_board_state:
                     continue
-                if self.analyzer.copyDict[neighbor] == AI_UNKNOWN:
+                if self.analyzer.ai_board_state[neighbor] == AI_UNKNOWN:
                     tiles_to_update.append(neighbor)
             return tiles_to_update
         return None
@@ -39,24 +39,24 @@ class PatternDetector:
         Detects when all bombs around a tile are flagged
         This means all remaining unknown squares are safe
         """
-        if key not in self.analyzer.copyDict:
+        if key not in self.analyzer.ai_board_state:
             return None
 
-        tile_value = self.analyzer.copyDict[key]
+        tile_value = self.analyzer.ai_board_state[key]
         flags_around = 0
 
         for neighbor in self.analyzer.get_neighbors(key):
-            if neighbor not in self.analyzer.copyDict:
+            if neighbor not in self.analyzer.ai_board_state:
                 continue
-            if self.analyzer.copyDict[neighbor] == AI_FLAGGED:
+            if self.analyzer.ai_board_state[neighbor] == AI_FLAGGED:
                 flags_around += 1
 
         if flags_around == tile_value:
             tiles_to_update = []
             for neighbor in self.analyzer.get_neighbors(key):
-                if neighbor not in self.analyzer.copyDict:
+                if neighbor not in self.analyzer.ai_board_state:
                     continue
-                if self.analyzer.copyDict[neighbor] == AI_UNKNOWN:
+                if self.analyzer.ai_board_state[neighbor] == AI_UNKNOWN:
                     tiles_to_update.append(neighbor)
             if len(tiles_to_update) != 0:
                 return tiles_to_update
@@ -67,10 +67,10 @@ class PatternDetector:
         Advanced pattern detection using transitive properties between adjacent tiles
         Returns tile coordinates to reveal or flag (negative coordinates indicate flag)
         """
-        if key not in self.analyzer.copyDict:
+        if key not in self.analyzer.ai_board_state:
             return None
 
-        tile_value = self.analyzer.copyDict[key]
+        tile_value = self.analyzer.ai_board_state[key]
         flags_around = 0
         open_square_number = 0
         possibilities = []
@@ -78,9 +78,9 @@ class PatternDetector:
 
         # Check if there are any unknown cardinal neighbors
         for neighbor in self.analyzer.get_cardinal_neighbors(key):
-            if neighbor not in self.analyzer.copyDict:
+            if neighbor not in self.analyzer.ai_board_state:
                 check_availability -= 1
-            elif self.analyzer.copyDict[neighbor] >= -1:
+            elif self.analyzer.ai_board_state[neighbor] >= -1:
                 check_availability -= 1
 
         if check_availability == 0:
@@ -88,32 +88,32 @@ class PatternDetector:
 
         # Count flags and unknown squares around the key tile
         for neighbor in self.analyzer.get_neighbors(key):
-            if neighbor not in self.analyzer.copyDict:
+            if neighbor not in self.analyzer.ai_board_state:
                 continue
-            elif self.analyzer.copyDict[neighbor] == AI_UNKNOWN:
+            elif self.analyzer.ai_board_state[neighbor] == AI_UNKNOWN:
                 open_square_number += 1
-            elif self.analyzer.copyDict[neighbor] == AI_FLAGGED:
+            elif self.analyzer.ai_board_state[neighbor] == AI_FLAGGED:
                 flags_around += 1
 
         # Check each cardinal direction for pattern matches
         for neighbor in self.analyzer.get_cardinal_neighbors(key):
-            if neighbor not in self.analyzer.copyDict:
+            if neighbor not in self.analyzer.ai_board_state:
                 continue
-            if self.analyzer.copyDict[neighbor] in [AI_UNKNOWN, AI_FLAGGED]:
+            if self.analyzer.ai_board_state[neighbor] in [AI_UNKNOWN, AI_FLAGGED]:
                 continue
 
-            adjacent_tile_value = self.analyzer.copyDict[neighbor]
+            adjacent_tile_value = self.analyzer.ai_board_state[neighbor]
             flags_around_adjacent = 0
             open_square_number_around_adjacent = 0
 
             # Analyze the adjacent tile
             for neighbor2 in self.analyzer.get_neighbors(neighbor):
-                if neighbor2 not in self.analyzer.copyDict:
+                if neighbor2 not in self.analyzer.ai_board_state:
                     continue
-                elif self.analyzer.copyDict[neighbor2] == AI_UNKNOWN:
+                elif self.analyzer.ai_board_state[neighbor2] == AI_UNKNOWN:
                     open_square_number_around_adjacent += 1
                     possibilities.append(neighbor2)
-                elif self.analyzer.copyDict[neighbor2] == AI_FLAGGED:
+                elif self.analyzer.ai_board_state[neighbor2] == AI_FLAGGED:
                     flags_around_adjacent += 1
 
             # Pattern matching conditions

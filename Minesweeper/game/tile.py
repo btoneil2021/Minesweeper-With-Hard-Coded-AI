@@ -15,11 +15,10 @@ class Tile:
     def draw(self, screen):
         self.renderer.draw_tile(screen, self)
 
-    def reveal(self):
-        if self.state == STATE_HIDDEN and self.isBomb:
-            self.state = STATE_BOMB
-        elif self.state == STATE_HIDDEN:
-            self.state = STATE_REVEALED
+    def set_revealed(self):
+        """Reveal this tile (sets state to REVEALED or BOMB)"""
+        if self.state == STATE_HIDDEN:
+            self.state = STATE_BOMB if self.isBomb else STATE_REVEALED
 
     def plantFlag(self):
         if self.state == STATE_HIDDEN:

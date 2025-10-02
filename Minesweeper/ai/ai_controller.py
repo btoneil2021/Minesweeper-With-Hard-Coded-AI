@@ -15,16 +15,12 @@ class AIController:
             game_logic: GameLogic object
             right_click: If True, flag the tile; if False, reveal it
         """
-        # Move mouse to position for visual feedback
-        py.mouse.set_pos(key[0] * TILE_SIZE + (TILE_SIZE // 2),
-                        key[1] * TILE_SIZE + (TILE_SIZE // 2))
+        if AI_CLICK_FEEDBACK:
+            py.mouse.set_pos(key[0] * TILE_SIZE + (TILE_SIZE // 2),
+                            key[1] * TILE_SIZE + (TILE_SIZE // 2))
 
         tile = board.get_tile(key)
         if not right_click:
-            # Left click - reveal tile
-            tile.reveal()
-            if tile.val == 0:
-                game_logic.reveal_zeros(key)
+            game_logic.reveal_tile(key)
         elif tile.state != STATE_FLAGGED:
-            # Right click - flag tile
             tile.plantFlag()

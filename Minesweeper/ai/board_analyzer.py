@@ -1,51 +1,30 @@
 from constants import *
+from game.neighbor_utils import NeighborUtils
 
 
-class BoardAnalyzer:
+class BoardAnalyzer(NeighborUtils):
     """Analyzes the board state and extracts visible information"""
 
     def __init__(self):
-        self.copyDict = {}
+        self.ai_board_state = {}
 
-    def grab_board(self, board_dict):
+    def grab_board(self, unknown_tiles):
         """
         Grabs the board in such a way that it cannot see anything but uncovered tiles
         -1 (AI_FLAGGED) is flagged, -2 (AI_UNKNOWN) is unknown
         """
-        for key in board_dict.keys():
-            tile = board_dict[key]
+        for coordinate in unknown_tiles.keys():
+            tile = unknown_tiles[coordinate]
             if tile.state == STATE_REVEALED:
-                self.copyDict[key] = tile.val
+                self.ai_board_state[coordinate] = tile.val
             elif tile.state == STATE_FLAGGED:
-                self.copyDict[key] = AI_FLAGGED
+                self.ai_board_state[coordinate] = AI_FLAGGED
             else:
-                self.copyDict[key] = AI_UNKNOWN
+                self.ai_board_state[coordinate] = AI_UNKNOWN
 
     def are_there_zeros(self):
         """Check if any revealed tiles have value 0"""
-        for value in self.copyDict.values():
+        for value in self.ai_board_state.values():
             if value == 0:
                 return True
         return False
-
-    def get_neighbors(self, key):
-        """Get all 8 neighboring coordinates for a given tile"""
-        return [
-            (key[0] + 1, key[1]),
-            (key[0], key[1] + 1),
-            (key[0] + 1, key[1] + 1),
-            (key[0] - 1, key[1]),
-            (key[0], key[1] - 1),
-            (key[0] - 1, key[1] - 1),
-            (key[0] - 1, key[1] + 1),
-            (key[0] + 1, key[1] - 1)
-        ]
-
-    def get_cardinal_neighbors(self, key):
-        """Get only the 4 cardinal direction neighbors"""
-        return [
-            (key[0] + 1, key[1]),
-            (key[0] - 1, key[1]),
-            (key[0], key[1] + 1),
-            (key[0], key[1] - 1)
-        ]
