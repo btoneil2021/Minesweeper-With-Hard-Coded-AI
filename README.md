@@ -96,7 +96,7 @@ The AI uses a hierarchical decision-making process:
 1. **Initial Random Move**: Makes a random first move to reveal the initial board state
 2. **Deterministic Logic**: Applies pattern detection to find guaranteed safe tiles and mines
 3. **Transitive Reasoning**: Uses relationships between adjacent tiles for complex deductions
-4. **Probability Analysis**: When logic is insufficient, calculates mine probabilities using constraint satisfaction
+4. **Probability Analysis (IN PROGRESS)**: When logic is insufficient, calculates mine probabilities using constraint satisfaction
 5. **Move Execution**: Takes the safest action available
 
 The AI only tracks statistics for games where it made non-random decisions, ensuring meaningful win rate metrics.
