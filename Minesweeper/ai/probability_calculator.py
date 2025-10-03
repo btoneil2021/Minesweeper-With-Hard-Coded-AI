@@ -16,24 +16,24 @@ class ProbabilityCalculator:
         num_valued_tiles = 0
 
         for neighbor in self.analyzer.get_neighbors(key):
-            if neighbor not in self.analyzer.ai_board_state:
+            if not self.analyzer.has_tile(neighbor):
                 continue
-            if self.analyzer.ai_board_state[neighbor] in [AI_FLAGGED, AI_UNKNOWN]:
+            if self.analyzer.get_tile_state(neighbor) in [AI_FLAGGED, AI_UNKNOWN]:
                 continue
 
             num_valued_tiles += 1
 
             # Analyze the value tile
-            the_value = self.analyzer.ai_board_state[neighbor]
+            the_value = self.analyzer.get_tile_state(neighbor)
             bombs_left = the_value
             open_squares = 0
 
             for neighbor2 in self.analyzer.get_neighbors(neighbor):
-                if neighbor2 not in self.analyzer.ai_board_state:
+                if not self.analyzer.has_tile(neighbor2):
                     continue
-                elif self.analyzer.ai_board_state[neighbor2] == AI_UNKNOWN:
+                elif self.analyzer.get_tile_state(neighbor2) == AI_UNKNOWN:
                     open_squares += 1
-                elif self.analyzer.ai_board_state[neighbor2] == AI_FLAGGED:
+                elif self.analyzer.get_tile_state(neighbor2) == AI_FLAGGED:
                     bombs_left -= 1
 
             if open_squares > 0:

@@ -6,7 +6,7 @@ class BoardAnalyzer(NeighborUtils):
     """Analyzes the board state and extracts visible information"""
 
     def __init__(self):
-        self.ai_board_state = {}
+        self._ai_board_state = {}
 
     def grab_board(self, unknown_tiles):
         """
@@ -16,15 +16,31 @@ class BoardAnalyzer(NeighborUtils):
         for coordinate in unknown_tiles.keys():
             tile = unknown_tiles[coordinate]
             if tile.state == STATE_REVEALED:
-                self.ai_board_state[coordinate] = tile.val
+                self._ai_board_state[coordinate] = tile.val
             elif tile.state == STATE_FLAGGED:
-                self.ai_board_state[coordinate] = AI_FLAGGED
+                self._ai_board_state[coordinate] = AI_FLAGGED
             else:
-                self.ai_board_state[coordinate] = AI_UNKNOWN
+                self._ai_board_state[coordinate] = AI_UNKNOWN
 
-    def are_there_zeros(self):
+    def zeros_are_uncovered(self):
         """Check if any revealed tiles have value 0"""
-        for value in self.ai_board_state.values():
+        for value in self._ai_board_state.values():
             if value == 0:
                 return True
         return False
+
+    def get_tile_state(self, coordinate):
+        """Get the state of a specific tile coordinate"""
+        return self._ai_board_state.get(coordinate)
+
+    def has_tile(self, coordinate):
+        """Check if a coordinate exists in the board state"""
+        return coordinate in self._ai_board_state
+
+    def get_all_coordinates(self):
+        """Get all tile coordinates"""
+        return self._ai_board_state.keys()
+
+    def get_all_values(self):
+        """Get all tile values"""
+        return self._ai_board_state.values()

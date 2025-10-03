@@ -5,22 +5,13 @@ from constants import *
 class AIController:
     """Executes AI moves on the game board"""
 
-    def movement(self, key, board, game_logic, right_click=False):
-        """
-        Execute a move at the given key position
-
-        Args:
-            key: Tuple (x, y) coordinates of the tile
-            board: Board object
-            game_logic: GameLogic object
-            right_click: If True, flag the tile; if False, reveal it
-        """
+    def movement(self, tile_coords, board, game_logic, right_click=False):
         if AI_CLICK_FEEDBACK:
-            py.mouse.set_pos(key[0] * TILE_SIZE + (TILE_SIZE // 2),
-                            key[1] * TILE_SIZE + (TILE_SIZE // 2))
+            py.mouse.set_pos(tile_coords[0] * TILE_SIZE + (TILE_SIZE // 2),
+                            tile_coords[1] * TILE_SIZE + (TILE_SIZE // 2))
 
-        tile = board.get_tile(key)
+        tile = board.get_tile(tile_coords)
         if not right_click:
-            game_logic.reveal_tile(key)
+            game_logic.reveal_tile(tile_coords)
         elif tile.state != STATE_FLAGGED:
             tile.plantFlag()
