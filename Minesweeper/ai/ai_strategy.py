@@ -2,7 +2,7 @@ import random
 from constants import *
 from .board_analyzer import BoardAnalyzer
 from .pattern_detector import PatternDetector
-from .probability_calculator import ProbabilityCalculator
+from .probability.probability_calculator import ProbabilityCalculator
 
 
 class AIStrategy:
