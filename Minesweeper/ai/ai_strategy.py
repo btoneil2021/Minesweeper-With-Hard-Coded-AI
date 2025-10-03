@@ -23,8 +23,8 @@ class AIStrategy:
 
         if self._should_do_random_move():
             return self._random_move()
-
-        self.performance_can_be_evaluated = True
+        else:
+            self.performance_can_be_evaluated = True
 
         for coord in self.analyzer.get_all_coordinates():
             if self.analyzer.get_tile_state(coord) in [AI_FLAGGED, AI_UNKNOWN]:
@@ -65,7 +65,7 @@ class AIStrategy:
         return self._find_actionable_tile(tiles_to_reveal, to_be_flagged=False)
     
     def _transitive_detection(self, tile_coord):
-        if (target_tile := self.pattern_detector.transitive_bomb_property(key=tile_coord)) is None \
+        if (target_tile := self.pattern_detector.transitive_bomb_property(tile_coord)) is None \
             or not self.analyzer.has_tile(target_tile):
             return None
 
