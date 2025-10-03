@@ -28,8 +28,8 @@ class GameRunner:
 
     def _handle_ai_turn(self):
         """Process AI decision and execute move."""
-        key, is_flag, can_be_evaluated = self.ai_strategy.decide_next_move(self.board)
-        self.statistics.mark_if_can_be_evaluated(can_be_evaluated)
+        key, is_flag = self.ai_strategy.decide_next_move(self.board)
+        self.statistics.mark_if_can_be_evaluated(self.ai_strategy.performance_can_be_evaluated)
 
         if key is not None:
             self.ai_controller.movement(key, self.board, self.game_logic, right_click=is_flag)
