@@ -1,4 +1,5 @@
 from typing import Optional, List, Tuple
+from dataclasses import dataclass
 from constants import *
 
 
@@ -8,162 +9,140 @@ class TransitivePatternMatcher:
     Detects bombs and safe tiles by analyzing relationships between adjacent tiles
     """
 
+    @dataclass(frozen=True)
+    class TileContext:
+        """Encapsulates all relevant context about a tile for pattern matching"""
+        value: int
+        flags_around: int
+        unknown_around: int
+
+        @property
+        def remaining_mines(self) -> int:
+            """Number of mines still needed to satisfy this tile's constraint"""
+            return self.value - self.flags_around
+
     def __init__(self, board_analyzer):
         self.analyzer = board_analyzer
 
-    def find_transitive_move(self, key: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+    def find_transitive_move(self, tile_coord: Tuple[int, int]) -> Optional[Tuple[int, int]]:
         """
         Advanced pattern detection using transitive properties between adjacent tiles
         Returns tile coordinates to reveal or flag (negative coordinates indicate flag)
         """
-        if not self.analyzer.has_tile(key):
+        if not self.analyzer.has_tile(tile_coord) \
+            or not self._has_unknown_cardinal_neighbor(tile_coord):
             return None
 
-        if not self._has_unknown_cardinal_neighbor(key):
-            return None
-
-        tile_value = self.analyzer.get_tile_state(key)
-        flags_around = self._count_neighbors_by_states(key, [AI_FLAGGED])
-        unknown_count = self._count_neighbors_by_states(key, [AI_UNKNOWN])
-
-        # Check each cardinal direction for pattern matches
-        for neighbor in self.analyzer.get_cardinal_neighbors(key):
-            if not self.analyzer.has_tile(neighbor):
-                continue
-            if self.analyzer.get_tile_state(neighbor) in [AI_UNKNOWN, AI_FLAGGED]:
-                continue
-
-            adjacent_tile_value = self.analyzer.get_tile_state(neighbor)
-            flags_around_adjacent = self._count_neighbors_by_states(neighbor, [AI_FLAGGED])
-            unknown_around_adjacent = self._count_neighbors_by_states(neighbor, [AI_UNKNOWN])
-            possibilities = self._get_neighbors_by_state(neighbor, AI_UNKNOWN)
-
-            # Pattern matching conditions
-            result = self._check_pattern_conditions(
-                key, neighbor, possibilities,
-                unknown_around_adjacent, adjacent_tile_value,
-                flags_around_adjacent, tile_value, flags_around, unknown_count
-            )
-            if result is not None:
+        for neighbor in self.analyzer.get_cardinal_neighbors(tile_coord):
+            if (result := self._check_neighbor_pattern(tile_coord, neighbor)) is not None:
                 return result
 
         return None
 
-    def _has_unknown_cardinal_neighbor(self, key: Tuple[int, int]) -> bool:
+    def _has_unknown_cardinal_neighbor(self, tile_coord: Tuple[int, int]) -> bool:
         """Check if there are any unknown cardinal neighbors"""
-        for neighbor in self.analyzer.get_cardinal_neighbors(key):
-            if self.analyzer.has_tile(neighbor):
-                if self.analyzer.get_tile_state(neighbor) < -1:
-                    return True
+        for neighbor in self.analyzer.get_cardinal_neighbors(tile_coord):
+            if not self.analyzer.has_tile(neighbor):
+                continue
+
+            if self.analyzer.get_tile_state(neighbor) < -1:
+                return True
+
         return False
 
-    def _count_neighbors_by_states(self, key: Tuple[int, int],
-                                   target_states: List[int]) -> int:
-        """Count neighbors matching any of the target states"""
-        count = 0
-        for neighbor in self.analyzer.get_neighbors(key):
-            if self.analyzer.has_tile(neighbor):
-                if self.analyzer.get_tile_state(neighbor) in target_states:
-                    count += 1
-        return count
+    def _get_tile_context(self, tile_coord: Tuple[int, int]) -> 'TransitivePatternMatcher.TileContext':
+        """Gather all context for a tile"""
+        return self.TileContext(
+            value=self.analyzer.get_tile_state(tile_coord),
+            flags_around=self.analyzer.count_neighbors_by_states(tile_coord, [AI_FLAGGED]),
+            unknown_around=self.analyzer.count_neighbors_by_states(tile_coord, [AI_UNKNOWN])
+        )
 
-    def _get_neighbors_by_state(self, key: Tuple[int, int],
-                                target_state: int) -> List[Tuple[int, int]]:
-        """Get all neighbors matching the target state"""
-        matching_neighbors = []
-        for neighbor in self.analyzer.get_neighbors(key):
-            if self.analyzer.has_tile(neighbor):
-                if self.analyzer.get_tile_state(neighbor) == target_state:
-                    matching_neighbors.append(neighbor)
-        return matching_neighbors
+    def _check_neighbor_pattern(self, tile_coord: Tuple[int, int],
+                                neighbor: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        """
+        Check pattern between current tile and one neighbor
+        Analyzes the relationship to find safe/bomb tiles using transitive properties
+        """
+        # Early validation - skip invalid or flagged/unknown neighbors
+        if not self.analyzer.has_tile(neighbor) \
+            or self.analyzer.get_tile_state(neighbor) in [AI_UNKNOWN, AI_FLAGGED]:
+            return None
 
-    def _check_pattern_conditions(self, tile_coord: Tuple[int, int], neighbor: Tuple[int, int],
-                                  possibilities: List[Tuple[int, int]],
-                                  unknown_adjacent: int, adjacent_value: int, flags_adjacent: int,
-                                  tile_value: int, flags_current: int, unknown_current: int) -> Optional[Tuple[int, int]]:
-        """
-        Check various pattern conditions for transitive bomb detection
-        Analyzes the relationship between current tile and adjacent tile to find safe/bomb tiles
-        """
-        if self._matches_safe_pattern(unknown_adjacent, adjacent_value, flags_adjacent,
-                                      tile_value, flags_current, unknown_current):
+        # Gather tile contexts
+        current_ctx = self._get_tile_context(tile_coord)
+        neighbor_ctx = self._get_tile_context(neighbor)
+        possibilities = self.analyzer.get_neighbors_by_state(neighbor, AI_UNKNOWN)
+
+        if self._matches_safe_pattern(neighbor_ctx, current_ctx):
             return self._get_directional_tile(tile_coord, neighbor, possibilities, safe=True)
-
-        if self._matches_bomb_pattern(unknown_adjacent, adjacent_value, flags_adjacent,
-                                      tile_value, flags_current, unknown_current):
+        elif self._matches_bomb_pattern(neighbor_ctx, current_ctx):
             return self._get_directional_tile(tile_coord, neighbor, possibilities, safe=False)
+        else:
+            return None
 
-        return None
-
-    def _matches_safe_pattern(self, unknown_adj: int, adj_val: int, flags_adj: int,
-                             tile_val: int, flags_curr: int, unknown_curr: int) -> bool:
+    def _matches_safe_pattern(self, neighbor: 'TransitivePatternMatcher.TileContext',
+                              current: 'TransitivePatternMatcher.TileContext') -> bool:
         """
         Detect safe tile patterns based on transitive properties
         Returns True if the pattern indicates a safe tile
         """
         # Pattern: Adjacent needs 1 more bomb, current needs 1 more bomb, current has 2 unknowns
         # This means the shared unknown is a bomb, so the opposite unknown is safe
-        if unknown_adj == 3 and adj_val == flags_adj + 1 and \
-           tile_val == flags_curr + 1 and unknown_curr == 2:
+        if (neighbor.unknown_around == 3 and neighbor.remaining_mines == 1 and
+            current.remaining_mines == 1 and current.unknown_around == 2):
             return True
 
         # Pattern: Adjacent needs 2 more bombs, current needs 2 more bombs, current has 2 unknowns
         # This means both unknowns of current are bombs, so other adjacents are safe
-        if unknown_adj == 3 and adj_val == flags_adj + 2 and \
-           tile_val == flags_curr + 2 and unknown_curr == 2:
+        if (neighbor.unknown_around == 3 and neighbor.remaining_mines == 2 and
+            current.remaining_mines == 2 and current.unknown_around == 2):
             return True
 
         return False
 
-    def _matches_bomb_pattern(self, unknown_adj: int, adj_val: int, flags_adj: int,
-                             tile_val: int, flags_curr: int, unknown_curr: int) -> bool:
+    def _matches_bomb_pattern(self, neighbor: 'TransitivePatternMatcher.TileContext',
+                              current: 'TransitivePatternMatcher.TileContext') -> bool:
         """
         Detect bomb tile patterns based on transitive properties
         Returns True if the pattern indicates a bomb tile
         """
         # Pattern: Adjacent needs 2 more bombs, current needs 1 more bomb
         # This indicates a specific directional bomb
-        if unknown_adj == 3 and adj_val == flags_adj + 2 and \
-           tile_val == flags_curr + 1 and unknown_curr in [2, 3]:
+        if (neighbor.unknown_around == 3 and neighbor.remaining_mines == 2 and
+            current.remaining_mines == 1 and current.unknown_around in [2, 3]):
             return True
 
         # Pattern: Adjacent needs 2 more bombs, current value is 1 (needs 1 bomb total)
-        if unknown_adj == 3 and adj_val == flags_adj + 2 and \
-           tile_val == 1 and unknown_curr == 3:
+        if (neighbor.unknown_around == 3 and neighbor.remaining_mines == 2 and
+            current.value == 1 and current.unknown_around == 3):
             return True
 
         return False
 
-    def _get_directional_tile(self, key: Tuple[int, int], neighbor: Tuple[int, int],
+    def _get_directional_tile(self, tile_coord: Tuple[int, int], neighbor: Tuple[int, int],
                              possibilities: List[Tuple[int, int]], safe: bool = True) -> Optional[Tuple[int, int]]:
         """Get the appropriate tile based on direction and pattern type"""
         if not possibilities:
             return None
 
-        direction = (neighbor[0] - key[0], neighbor[1] - key[1])
+        direction = (neighbor[0] - tile_coord[0], neighbor[1] - tile_coord[1])
+        direction_map = {
+            (1, 0): (0, True),   # Right: max x
+            (-1, 0): (0, False), # Left: min x
+            (0, 1): (1, True),   # Down: max y
+            (0, -1): (1, False)  # Up: min y
+        }
 
-        # Right: (1, 0) - find max x with same y
-        if direction == (1, 0):
-            result = self._find_extreme_tile(possibilities, coord_index=0, compare_max=True)
-        # Left: (-1, 0) - find min x with same y
-        elif direction == (-1, 0):
-            result = self._find_extreme_tile(possibilities, coord_index=0, compare_max=False)
-        # Down: (0, 1) - find max y with same x
-        elif direction == (0, 1):
-            result = self._find_extreme_tile(possibilities, coord_index=1, compare_max=True)
-        # Up: (0, -1) - find min y with same x
-        elif direction == (0, -1):
-            result = self._find_extreme_tile(possibilities, coord_index=1, compare_max=False)
-        else:
+        if direction not in direction_map:
             return None
 
-        if result is None:
+        coord_index, compare_max = direction_map[direction]
+        if (result := self._find_extreme_tile(possibilities, coord_index, compare_max)) is None:
             return None
 
         # Return negative coordinates to indicate flagging
-        if not safe:
-            return (-1 * result[0], -1 * result[1])
-        return result
+        return (-result[0], -result[1]) if not safe else result
 
     def _find_extreme_tile(self, possibilities: List[Tuple[int, int]], coord_index: int,
                           compare_max: bool) -> Optional[Tuple[int, int]]:

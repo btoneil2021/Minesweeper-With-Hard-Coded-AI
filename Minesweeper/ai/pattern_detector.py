@@ -16,57 +16,30 @@ class PatternDetector:
             return None
         return self.analyzer.get_tile_state(tile_coord)
 
-    def _count_neighbors_by_states(self, tile_coord: Tuple[int, int],
-                                   target_states: List[int]) -> int:
-        """Count neighbors matching any of the target states"""
-        count = 0
-
-        for neighbor in self.analyzer.get_neighbors(tile_coord):
-            if (neighbor_value := self._get_tile_value_if_valid(neighbor)) is not None \
-                and neighbor_value in target_states:
-                count += 1
-
-        return count
-
-    def _get_neighbors_by_state(self, tile_coord: Tuple[int, int],
-                                target_state: int) -> List[Tuple[int, int]]:
-        """Get all neighbors matching the target state"""
-        matching_neighbors = []
-
-        for neighbor in self.analyzer.get_neighbors(tile_coord):
-            if self._get_tile_value_if_valid(neighbor) == target_state:
-                matching_neighbors.append(neighbor)
-
-        return matching_neighbors
-    
-    
-
     def same_bombs_as_squares(self, tile_coord: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
         """
         Detects when the number of unknown squares equals the tile value
         This means all unknown squares must be bombs
         """
-        unknown_or_flagged_count = self._count_neighbors_by_states(tile_coord, [AI_FLAGGED, AI_UNKNOWN])
+        unknown_or_flagged_count = self.analyzer.count_neighbors_by_states(tile_coord, [AI_FLAGGED, AI_UNKNOWN])
         if (tile_value := self._get_tile_value_if_valid(tile_coord)) is None \
             or unknown_or_flagged_count != tile_value:
             return None
 
-        return self._get_neighbors_by_state(tile_coord, AI_UNKNOWN)
-
-        
+        return self.analyzer.get_neighbors_by_state(tile_coord, AI_UNKNOWN)
 
     def all_bombs_found(self, tile_coord: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
         """
         Detects when all bombs around a tile are flagged
         This means all remaining unknown squares are safe
         """
-        
-        flags_around = self._count_neighbors_by_states(tile_coord, [AI_FLAGGED])
+
+        flags_around = self.analyzer.count_neighbors_by_states(tile_coord, [AI_FLAGGED])
         if (tile_value := self._get_tile_value_if_valid(tile_coord)) is None \
             or flags_around != tile_value:
             return None
-        
-        unknown_neighbors = self._get_neighbors_by_state(tile_coord, AI_UNKNOWN)
+
+        unknown_neighbors = self.analyzer.get_neighbors_by_state(tile_coord, AI_UNKNOWN)
         if unknown_neighbors:
             return unknown_neighbors
 

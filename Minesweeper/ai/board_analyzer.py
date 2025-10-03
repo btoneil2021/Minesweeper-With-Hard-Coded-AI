@@ -1,3 +1,4 @@
+from typing import List, Tuple
 from constants import *
 from game.neighbor_utils import NeighborUtils
 
@@ -44,3 +45,23 @@ class BoardAnalyzer(NeighborUtils):
     def get_all_values(self):
         """Get all tile values"""
         return self._ai_board_state.values()
+
+    def count_neighbors_by_states(self, tile_coord: Tuple[int, int],
+                                  target_states: List[int]) -> int:
+        """Count neighbors matching any of the target states"""
+        count = 0
+        for neighbor in self.get_neighbors(tile_coord):
+            if self.has_tile(neighbor):
+                if self.get_tile_state(neighbor) in target_states:
+                    count += 1
+        return count
+
+    def get_neighbors_by_state(self, tile_coord: Tuple[int, int],
+                               target_state: int) -> List[Tuple[int, int]]:
+        """Get all neighbors matching the target state"""
+        matching_neighbors = []
+        for neighbor in self.get_neighbors(tile_coord):
+            if self.has_tile(neighbor):
+                if self.get_tile_state(neighbor) == target_state:
+                    matching_neighbors.append(neighbor)
+        return matching_neighbors
