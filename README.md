@@ -4,11 +4,19 @@ A Python implementation of Minesweeper featuring an advanced AI that uses logica
 
 ## Features
 
+### Game Modes
+The game supports three different play modes:
+
+1. **AI Only Mode** - Watch the AI play automatically using advanced solving techniques
+2. **Player Only Mode** - Classic manual Minesweeper gameplay
+3. **Hybrid Mode** - Play manually with AI assistance available at the press of a button
+
 ### Game Engine
 - Classic Minesweeper gameplay with configurable board dimensions (default: 40×40 grid with 300 mines)
 - Interactive GUI built with Pygame
 - Automatic game restart with performance tracking
 - Win rate statistics
+- On-screen mode and AI status display
 
 ### AI Solver
 The AI employs multiple sophisticated strategies to solve Minesweeper boards:
@@ -32,7 +40,8 @@ The AI employs multiple sophisticated strategies to solve Minesweeper boards:
 ```
 Minesweeper/
 ├── game_runner.py              # Main game loop orchestration
-├── constants.py                # Game configuration and constants
+├── config.py                   # User-configurable settings
+├── constants.py                # Internal constants
 ├── game/
 │   ├── board.py               # Board state and tile management
 │   ├── game_logic.py          # Game rules and interactions
@@ -73,20 +82,50 @@ Run the game:
 python Minesweeper/game_runner.py
 ```
 
-The AI will automatically play the game. You can also manually interact with the board using:
+You'll be prompted to select a game mode:
+- **0** - AI Only Mode: AI plays automatically
+- **1** - Player Only Mode: Manual play only
+- **2** - Hybrid Mode: Manual play with AI assistance
+
+Press Enter to use the default mode configured in [config.py](Minesweeper/config.py).
+
+### Controls
+
+**Player Only Mode:**
 - **Left Click**: Reveal a tile
 - **Right Click**: Flag/unflag a tile
 
+**Hybrid Mode:**
+- **Left Click**: Reveal a tile
+- **Right Click**: Flag/unflag a tile
+- **SPACE**: Toggle AI automation on/off
+- **S**: Execute a single AI step
+
+**AI Only Mode:**
+- No controls needed - watch the AI solve!
+
 ## Configuration
 
-Modify game settings in [constants.py](Minesweeper/constants.py):
+Modify game settings in [config.py](Minesweeper/config.py):
 
 ```python
-NUM_BOMBS = 300        # Number of mines
-NUM_TILES_X = 40       # Board width
-NUM_TILES_Y = 40       # Board height
-TILE_SIZE = 20         # Pixel size of each tile
-AI_CLICK_FEEDBACK = False  # Visual feedback for AI moves
+# Board configuration
+NUM_BOMBS = 300        # Number of mines on the board
+NUM_TILES_X = 40       # Board width (number of tiles)
+NUM_TILES_Y = 40       # Board height (number of tiles)
+
+# Display settings
+TILE_SIZE = 20         # Size of each tile in pixels
+FONT_SIZE = 30         # Font size for UI text
+
+# Game mode (0 = AI Only, 1 = Player Only, 2 = Hybrid)
+GAME_MODE = 0          # Default game mode
+
+# Game timing
+GAME_RESTART_DELAY = 1000  # Delay in milliseconds before restarting
+
+# AI configuration
+AI_CLICK_FEEDBACK = False  # Show visual mouse cursor for AI moves
 ```
 
 ## How the AI Works
@@ -100,6 +139,27 @@ The AI uses a hierarchical decision-making process:
 5. **Move Execution**: Takes the safest action available
 
 The AI only tracks statistics for games where it made it out of the first random guessing phase, ensuring meaningful win rate metrics.
+
+## Game Modes in Detail
+
+### AI Only Mode
+Perfect for:
+- Watching the AI solve complex board configurations
+- Analyzing AI performance and win rates
+- Understanding advanced Minesweeper solving techniques
+
+### Player Only Mode
+Perfect for:
+- Traditional Minesweeper gameplay
+- Practicing your own solving skills
+- Competing against the AI's win rate
+
+### Hybrid Mode
+Perfect for:
+- Learning from the AI while playing
+- Getting help when stuck on difficult patterns
+- Training yourself to recognize patterns the AI uses
+- Using the AI as a "hint" system (single step with 'S' key)
 
 ## License
 

@@ -1,12 +1,15 @@
 import os
 
-# Game configuration
-NUM_BOMBS = 300
-NUM_TILES_X = 40
-NUM_TILES_Y = 40
-TILE_SIZE = 20
-FONT_SIZE = 30
+# Import user-configurable settings
+from config import *
+
+# Derived configuration (calculated from config.py)
 SCREEN_SIZE = (TILE_SIZE * NUM_TILES_X, TILE_SIZE * NUM_TILES_Y)
+
+# Game mode constants
+MODE_AI_ONLY = 0
+MODE_PLAYER_ONLY = 1
+MODE_HYBRID = 2
 
 # Tile states
 STATE_HIDDEN = 0
@@ -41,8 +44,3 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCE_FLAG = os.path.join(_BASE_DIR, "resources", "flag.png")
 RESOURCE_BOMB = os.path.join(_BASE_DIR, "resources", "bomb.png")
 
-# Game timing
-GAME_RESTART_DELAY = 1000  # milliseconds
-
-# AI configuration
-AI_CLICK_FEEDBACK = False
