@@ -99,15 +99,7 @@ The AI uses a hierarchical decision-making process:
 4. **Probability Analysis (IN PROGRESS)**: When logic is insufficient, calculates mine probabilities using constraint satisfaction
 5. **Move Execution**: Takes the safest action available
 
-The AI only tracks statistics for games where it made non-random decisions, ensuring meaningful win rate metrics.
-
-## Recent Development
-
-Recent commits show significant refactoring work:
-- Refactored probability calculation with constraint satisfaction
-- Improved transitive pattern matching logic
-- Enhanced pattern detection algorithms
-- Code organization and cleanup
+The AI only tracks statistics for games where it made it out of the first random guessing phase, ensuring meaningful win rate metrics.
 
 ## License
 
