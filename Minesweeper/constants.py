@@ -45,6 +45,4 @@ RESOURCE_BOMB = os.path.join(_BASE_DIR, "resources", "bomb.png")
 GAME_RESTART_DELAY = 1000  # milliseconds
 
 # AI configuration
-AI_RANDOM_MOVE_PROBABILITY = 27
-AI_RANDOM_MOVE_RANGE = NUM_TILES_X * 1000
 AI_CLICK_FEEDBACK = False
