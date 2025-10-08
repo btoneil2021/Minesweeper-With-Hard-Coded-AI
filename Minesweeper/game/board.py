@@ -1,6 +1,7 @@
 import random
 from constants import *
 from .tile import Tile
+from .tile_renderer import TileRenderer
 from .neighbor_utils import NeighborUtils
 
 
@@ -9,6 +10,7 @@ class Board(NeighborUtils):
 
     def __init__(self):
         self.dictionary = {}
+        self.renderer = TileRenderer()  # Shared renderer for all tiles
         self._initialize_tiles()
         self._initialize_bombs()
         self._initialize_values()
@@ -20,7 +22,7 @@ class Board(NeighborUtils):
         # Create all tiles
         for i in range(NUM_TILES_Y):
             for j in range(NUM_TILES_X):
-                self.dictionary[(j, i)] = Tile(x=x, y=y)
+                self.dictionary[(j, i)] = Tile(x=x, y=y, renderer=self.renderer)
                 x += TILE_SIZE
             y += TILE_SIZE
             x = 0
@@ -57,7 +59,7 @@ class Board(NeighborUtils):
 
         # Update the tile with calculated value
         tile = self.dictionary[key]
-        self.dictionary[key] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb)
+        self.dictionary[key] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb, renderer=self.renderer)
 
     def draw(self, screen):
         """Draw all tiles on the screen"""
