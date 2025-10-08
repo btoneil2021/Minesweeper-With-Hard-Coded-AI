@@ -26,6 +26,7 @@ class AIStrategy:
         else:
             self.performance_can_be_evaluated = True
 
+        # Try pattern detection first (100% certain moves)
         for coord in self.analyzer.get_all_coordinates():
             if self.analyzer.get_tile_state(coord) in [AI_FLAGGED, AI_UNKNOWN]:
                 continue
@@ -33,7 +34,8 @@ class AIStrategy:
             if (tile_and_action := self._safe_ai_moves(coord)) is not None:
                 return tile_and_action
 
-        return (None, False)
+        # No certain moves found - use probability
+        return self._probability_based_move()
     
     def _should_do_random_move(self):
         if self.analyzer.zeros_are_uncovered():
@@ -75,6 +77,17 @@ class AIStrategy:
             return (flag_pos, True)
         else:
             return (target_tile, False)
+
+    def _constraint_subtraction_detection(self, tile_coord):
+        if (target_tile := self.pattern_detector.constraint_subtraction(tile_coord)) is None:
+            return None
+
+        # Negative coordinates indicate a flagging action
+        if target_tile[0] < 0 or target_tile[1] < 0:
+            flag_pos = (-1 * target_tile[0], -1 * target_tile[1])
+            return (flag_pos, True)
+        else:
+            return (target_tile, False)
         
     def _safe_ai_moves(self, tile_coord):
         if (tile_and_action := self._obvious_bomb_tile_detection(tile_coord)) is not None:
@@ -85,3 +98,29 @@ class AIStrategy:
 
         if (tile_and_action := self._transitive_detection(tile_coord)) is not None:
             return tile_and_action
+
+        if (tile_and_action := self._constraint_subtraction_detection(tile_coord)) is not None:
+            return tile_and_action
+
+    def _probability_based_move(self):
+        """
+        Make a move based on probability when no certain moves exist.
+
+        Strategy:
+        1. Flag tiles with very high mine probability (>=90%)
+        2. Click tile with lowest mine probability
+
+        Returns:
+            tuple: (coord, is_flag) or (None, False) if no move possible
+        """
+        # Try to find a high-probability tile to flag
+        flag_tile, flag_prob = self.probability_calculator.find_highest_probability_tile(threshold=0.9)
+        if flag_tile and self.analyzer.get_tile_state(flag_tile) == AI_UNKNOWN:
+            return (flag_tile, True)
+
+        # Find safest tile to click
+        safe_tile, safe_prob = self.probability_calculator.find_lowest_probability_tile()
+        if safe_tile and self.analyzer.get_tile_state(safe_tile) == AI_UNKNOWN:
+            return (safe_tile, False)
+
+        return (None, False)

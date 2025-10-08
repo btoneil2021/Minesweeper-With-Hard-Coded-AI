@@ -4,7 +4,6 @@ from constants import *
 class TileRenderer:
     def __init__(self):
         self.font = py.font.Font(None, FONT_SIZE)
-        # Cache pre-loaded and scaled images
         self._flag_image = self._load_and_scale_image(RESOURCE_FLAG)
         self._bomb_image = self._load_and_scale_image(RESOURCE_BOMB)
 
