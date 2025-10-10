@@ -46,29 +46,35 @@ class ConstraintSubtractor:
     
     def _check_and_return_two_hop_neighbors(self, tile_coord, constraint_a: TileConstraint):
         for neighbor_coord in self.analyzer.get_two_hop_neighbors(tile_coord):
-            if (neighbor_value := self.analyzer.get_tile_value_if_valid(neighbor_coord)) is None \
-                  or neighbor_value == 0 \
-                    or neighbor_value in [AI_FLAGGED, AI_UNKNOWN]:
+            if (constraint_b := self._get_valid_neighbor_constraint(neighbor_coord)) is None:
                 continue
 
-            constraint_b = self._get_tile_context(neighbor_coord, neighbor_value)
-
-            if not constraint_b.unknowns or constraint_b.mines_needed <= 0:
-                continue
-
-            result_tile_coords = self._unknowns_subset_of_other_unknowns(constraint_a, constraint_b)
-            if result_tile_coords is not None:
-                return result_tile_coords
-
-            result_tile_coords = self._unknowns_subset_of_other_unknowns(constraint_b, constraint_a)
-            if result_tile_coords is not None:
-                return result_tile_coords
-
-            result_tile_coords = self._overlapping_constraints_case(constraint_a, constraint_b)
-            if result_tile_coords is not None:
-                return result_tile_coords
+            if result := self._try_constraint_strategies(constraint_a, constraint_b):
+                return result
 
         return None
+
+    def _get_valid_neighbor_constraint(self, neighbor_coord) -> Optional[TileConstraint]:
+        """Returns constraint for neighbor if valid, otherwise None."""
+        if (neighbor_value := self.analyzer.get_tile_value_if_valid(neighbor_coord)) is None \
+              or neighbor_value == 0 \
+              or neighbor_value in [AI_FLAGGED, AI_UNKNOWN]:
+            return None
+
+        constraint = self._get_tile_context(neighbor_coord, neighbor_value)
+
+        if not constraint.unknowns or constraint.mines_needed <= 0:
+            return None
+
+        return constraint
+
+    def _try_constraint_strategies(self, constraint_a: TileConstraint, constraint_b: TileConstraint):
+        """Try all constraint solving strategies in sequence."""
+        for check_order in [(constraint_a, constraint_b), (constraint_b, constraint_a)]:
+            if result := self._unknowns_subset_of_other_unknowns(*check_order):
+                return result
+
+        return self._overlapping_constraints_case(constraint_a, constraint_b)
     
     def _unknowns_subset_of_other_unknowns(self, constraint_a: TileConstraint, constraint_b: TileConstraint):
         if not constraint_b.unknowns.issubset(constraint_a.unknowns):
@@ -76,22 +82,24 @@ class ConstraintSubtractor:
 
         difference = constraint_a.unknowns - constraint_b.unknowns
 
-        # Case 1: All difference tiles must be mines
-        # A needs N mines in {B's tiles + difference}
-        # B needs M mines in {B's tiles}
-        # If N - M = len(difference), all difference tiles are mines
+        if tile := self._all_difference_tiles_are_mines(difference, constraint_a, constraint_b):
+            return tile
+
+        if tile := self._all_difference_tiles_are_safe(difference, constraint_a, constraint_b):
+            return tile
+
+    def _all_difference_tiles_are_mines(self, difference, constraint_a: TileConstraint, constraint_b: TileConstraint):
+        """A needs N mines in {B's tiles + difference}, B needs M in {B's tiles}.
+        If N - M = len(difference), all difference tiles are mines."""
         if difference and constraint_a.mines_needed - constraint_b.mines_needed == len(difference):
-            # Flag one of the difference tiles
             tile_to_flag = next(iter(difference))
             return (-tile_to_flag[0], -tile_to_flag[1])
 
-        # Case 2: All difference tiles must be safe
-        # If N = M, then B accounts for all of A's mines
-        # So difference tiles are safe
+    def _all_difference_tiles_are_safe(self, difference, constraint_a: TileConstraint, constraint_b: TileConstraint):
+        """If N = M, then B accounts for all of A's mines, so difference tiles are safe."""
         if difference and constraint_a.mines_needed == constraint_b.mines_needed:
-            # Reveal one of the difference tiles
             return next(iter(difference))
-    
+
     def _overlapping_constraints_case(self, constraint_a: TileConstraint, constraint_b: TileConstraint):
         # Case 3: Overlapping constraints (neither is subset of the other)
         # Example: A sees {X, Y, Z} needs 2, B sees {Y, Z, W} needs 1
