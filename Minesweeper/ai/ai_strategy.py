@@ -35,9 +35,9 @@ class AIStrategy:
                 return tile_and_action
 
         # No certain moves found - use probability
-        return self._probability_based_move()
+        # return self._probability_based_move()
         # Or, for debugging of "safe patterns", uncomment below
-        # return (None, False)
+        return (None, False)
     
     def _should_do_random_move(self):
         if self.analyzer.zeros_are_uncovered():

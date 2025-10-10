@@ -1,6 +1,4 @@
 import os
-
-# Import user-configurable settings
 from config import *
 
 # Derived configuration (calculated from config.py)

@@ -1,5 +1,4 @@
 import pygame as py
-import math
 from constants import *
 
 
