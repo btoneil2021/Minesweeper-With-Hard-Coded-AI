@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from constants import *
 from game.neighbor_utils import NeighborUtils
 
@@ -65,3 +65,31 @@ class BoardAnalyzer(NeighborUtils):
                 if self.get_tile_state(neighbor) == target_state:
                     matching_neighbors.append(neighbor)
         return matching_neighbors
+
+    def get_tile_value_if_valid(self, tile_coord: Tuple[int, int]) -> Optional[int]:
+        """Returns tile value if tile exists, None otherwise"""
+        if not self.has_tile(tile_coord):
+            return None
+        return self.get_tile_state(tile_coord)
+
+    def get_two_hop_neighbors(self, tile_coord: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """
+        Get all tiles within 2 hops (direct neighbors + neighbors-of-neighbors).
+        This allows constraint subtraction to work on tiles that aren't directly adjacent.
+
+        Example:
+        1 blank 2  ← "1" and "2" are 2 hops apart
+        """
+        two_hop_neighbors = set()
+
+        # Add direct neighbors (1-hop)
+        for neighbor in self.get_neighbors(tile_coord):
+            if self.has_tile(neighbor):
+                two_hop_neighbors.add(neighbor)
+
+                # Add neighbors-of-neighbors (2-hop)
+                for second_hop in self.get_neighbors(neighbor):
+                    if self.has_tile(second_hop) and second_hop != tile_coord:
+                        two_hop_neighbors.add(second_hop)
+
+        return list(two_hop_neighbors)
