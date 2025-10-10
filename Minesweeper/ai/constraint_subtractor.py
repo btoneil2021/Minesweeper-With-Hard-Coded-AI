@@ -1,11 +1,11 @@
 from typing import Optional, Tuple, Set, NamedTuple
 from constants import *
 
-class TileConstraint(NamedTuple):
-    unknowns: Set[Tuple[int, int]]
-    mines_needed: int
-
 class ConstraintSubtractor:
+    class TileConstraint(NamedTuple):
+        unknowns: Set[Tuple[int, int]]
+        mines_needed: int
+
     def __init__(self, board_analyzer):
         self.analyzer = board_analyzer
 
@@ -42,7 +42,7 @@ class ConstraintSubtractor:
         unknowns = set(self.analyzer.get_neighbors_by_state(tile_coord, AI_UNKNOWN))
         mines_needed = tile_value - flags_around
         
-        return TileConstraint(unknowns, mines_needed)
+        return self.TileConstraint(unknowns, mines_needed)
     
     def _check_and_return_two_hop_neighbors(self, tile_coord, constraint_a: TileConstraint):
         for neighbor_coord in self.analyzer.get_two_hop_neighbors(tile_coord):
