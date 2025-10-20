@@ -35,9 +35,9 @@ class AIStrategy:
                 return tile_and_action
 
         # No certain moves found - use probability
-        # return self._probability_based_move()
-        # Or, for debugging of "safe patterns", uncomment below
-        return (None, False)
+        return self._probability_based_move()
+        # Or, for debugging of "safe patterns", uncomment below to disable probability:
+        # return (None, False)
     
     def _should_do_random_move(self):
         if self.analyzer.zeros_are_uncovered():
@@ -109,16 +109,20 @@ class AIStrategy:
         Make a move based on probability when no certain moves exist.
 
         Strategy:
-        1. Flag tiles with very high mine probability (>=90%)
+        1. Flag tiles with very high mine probability (>=95%, raised from 90%)
         2. Click tile with lowest mine probability
 
         Returns:
             tuple: (coord, is_flag) or (None, False) if no move possible
         """
+        # Raised threshold from 0.9 to 0.95 for more conservative flagging
+        # This prevents corrupting the board state with potentially incorrect probability estimates
         # Try to find a high-probability tile to flag
-        flag_tile, flag_prob = self.probability_calculator.find_highest_probability_tile(threshold=0.9)
+        flag_tile, flag_prob = self.probability_calculator.find_highest_probability_tile(threshold=0.95)
         if flag_tile and self.analyzer.get_tile_state(flag_tile) == AI_UNKNOWN:
-            return (flag_tile, True)
+            # Additional validation: double-check probability is still high enough
+            if flag_prob >= 0.95:
+                return (flag_tile, True)
 
         # Find safest tile to click
         safe_tile, safe_prob = self.probability_calculator.find_lowest_probability_tile()
