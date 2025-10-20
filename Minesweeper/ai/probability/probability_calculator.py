@@ -1,8 +1,21 @@
 from constants import *
 from .constraint_collector import ConstraintCollector
-from .configuration_validator import ConfigurationValidator
+from .constraint_grouper import ConstraintGrouper
+from .configuration_generator import ConfigurationGenerator
+from .math_utilities import log_combinations, logsumexp, weighted_average_in_log_space
+import math
+import random
+
 
 class ProbabilityCalculator:
+    """
+    Orchestrates probability calculation using three-layer architecture.
+
+    Layer 1: Constraint extraction and grouping
+    Layer 2: Configuration generation
+    Layer 3: Probability calculation with log-space weighting
+    """
+
     def __init__(self, board_analyzer):
         self.analyzer = board_analyzer
         self.constraint_collector = ConstraintCollector(board_analyzer)
@@ -19,13 +32,14 @@ class ProbabilityCalculator:
             If target_tile provided: float probability (0.0 to 1.0)
             If target_tile is None: dict mapping {(x, y): probability} for ALL unknown tiles
         """
+        # Layer 1: Extract and group constraints
         constraints = self.constraint_collector.collect_all_constraints()
 
-        # No constraints: use global probability for all tiles
+        # No constraints: use global probability
         if not constraints:
             return self._calculate_global_probability(target_tile)
 
-        # Calculate probabilities based on constraints
+        # Layer 2 & 3: Generate configurations and calculate probabilities
         constrained_probs = self._calculate_constrained_probabilities(constraints)
 
         # Fallback to global if calculation failed
@@ -34,7 +48,6 @@ class ProbabilityCalculator:
 
         # If requesting specific tile
         if target_tile:
-            # Check if tile is constrained
             if target_tile in constrained_probs:
                 return constrained_probs[target_tile]
             else:
@@ -45,10 +58,9 @@ class ProbabilityCalculator:
         all_probabilities = dict(constrained_probs)
 
         # Calculate weighted probability for unconstrained tiles
-        # This uses the same global weighting approach as constrained tiles
         unconstrained_prob = self._calculate_unconstrained_probability(constraints, constrained_probs)
 
-        # Add unconstrained tiles with weighted probability
+        # Add unconstrained tiles
         for coord in self.analyzer.get_all_coordinates():
             if (self.analyzer.get_tile_state(coord) == AI_UNKNOWN and
                 coord not in all_probabilities):
@@ -56,56 +68,58 @@ class ProbabilityCalculator:
 
         return all_probabilities
 
-    def _is_tile_constrained(self, tile, constraints):
-        """Check if a tile is affected by any constraint"""
-        for constraint in constraints:
-            if tile in constraint.get_constrained_tiles():
-                return True
-        return False
-
-    def _get_all_constrained_tiles(self, constraints):
-        """Get set of all tiles affected by constraints"""
-        constrained_tiles = set()
-        for constraint in constraints:
-            constrained_tiles.update(constraint.get_constrained_tiles())
-        return constrained_tiles
-
     def _calculate_constrained_probabilities(self, constraints):
         """
-        Calculate probabilities using constraint satisfaction with global probability weighting.
+        Calculate probabilities using constraint satisfaction with global weighting.
 
-        This is the SOTA approach: weight each configuration by the number of ways
-        remaining mines can be placed in unconstrained tiles.
+        Uses the three-layer architecture:
+        1. Group constraints (Layer 1)
+        2. Generate valid configurations (Layer 2)
+        3. Weight and calculate probabilities (Layer 3)
 
         Returns:
             dict: {(x, y): probability} for all constrained tiles
         """
-        # Get all valid configurations
-        valid_configs = ConfigurationValidator.get_all_valid_configurations(constraints)
+        # Layer 1: Group constraints
+        groups = ConstraintGrouper.group_constraints(constraints)
+
+        if not groups:
+            return {}
+
+        # For simplicity, merge all groups into one for now
+        # (Independent groups could be optimized separately)
+        all_constrained_tiles = set()
+        for _, tiles in groups:
+            all_constrained_tiles.update(tiles)
+
+        # Layer 2: Generate valid configurations
+        valid_configs = ConfigurationGenerator.generate_valid_configurations(
+            constraints, all_constrained_tiles
+        )
 
         if not valid_configs:
             return {}
 
-        # Calculate global mine budget and unconstrained tile count
+        # Layer 3: Calculate probabilities with global weighting
+        return self._weight_and_calculate_probabilities(
+            valid_configs, all_constrained_tiles
+        )
+
+    def _weight_and_calculate_probabilities(self, valid_configs, constrained_tiles):
+        """
+        Weight configurations by unconstrained possibilities and calculate probabilities.
+
+        Uses log-space arithmetic from math_utilities to avoid overflow.
+        """
+        # Get global mine budget
         total_unknown = sum(1 for state in self.analyzer.get_all_values()
                           if state == AI_UNKNOWN)
         total_flagged = sum(1 for state in self.analyzer.get_all_values()
                           if state == AI_FLAGGED)
         remaining_mines = NUM_BOMBS - total_flagged
-
-        # Get constrained tiles (tiles affected by constraints)
-        constrained_tiles = set()
-        for constraint in constraints:
-            constrained_tiles.update(constraint.get_constrained_tiles())
-
-        # Unconstrained tiles = all unknown tiles - constrained tiles
         unconstrained_count = total_unknown - len(constrained_tiles)
 
-        # Weight each configuration by C(unconstrained_count, remaining_mines - mines_in_config)
-        # Use log-space arithmetic to avoid overflow with large numbers
-        import math
-
-        # Store log-weights for each configuration
+        # Calculate log-weights for each configuration
         log_weights = []
         config_data = []
 
@@ -113,8 +127,8 @@ class ProbabilityCalculator:
             mines_in_config = config_info['mine_count']
             mines_for_unconstrained = remaining_mines - mines_in_config
 
-            # Log-weight = log(C(unconstrained_count, mines_for_unconstrained))
-            log_weight = ConfigurationValidator.log_combinations(unconstrained_count, mines_for_unconstrained)
+            # Weight = C(unconstrained_count, mines_for_unconstrained)
+            log_weight = log_combinations(unconstrained_count, mines_for_unconstrained)
 
             if log_weight != float('-inf'):
                 log_weights.append(log_weight)
@@ -123,11 +137,10 @@ class ProbabilityCalculator:
         if not log_weights:
             return {}
 
-        # Calculate log(total_weight) using logsumexp trick
-        max_log_weight = max(log_weights)
-        total_weight_log = max_log_weight + math.log(sum(math.exp(lw - max_log_weight) for lw in log_weights))
+        # Calculate total weight using logsumexp
+        total_weight_log = logsumexp(log_weights)
 
-        # Calculate weighted mine counts in log-space
+        # Calculate weighted mine counts for each tile
         tile_log_weights = {tile: [] for tile in constrained_tiles}
 
         for i, config_info in enumerate(config_data):
@@ -140,11 +153,9 @@ class ProbabilityCalculator:
         probabilities = {}
         for tile in constrained_tiles:
             if tile_log_weights[tile]:
-                # log(sum of weights where tile is mine)
-                max_lw = max(tile_log_weights[tile])
-                mine_weight_log = max_lw + math.log(sum(math.exp(lw - max_lw) for lw in tile_log_weights[tile]))
-
-                # Probability = mine_weight / total_weight (in normal space)
+                # Sum of weights where tile is mine
+                mine_weight_log = logsumexp(tile_log_weights[tile])
+                # Probability = mine_weight / total_weight
                 probabilities[tile] = math.exp(mine_weight_log - total_weight_log)
             else:
                 probabilities[tile] = 0.0
@@ -153,7 +164,7 @@ class ProbabilityCalculator:
 
     def _calculate_unconstrained_probability(self, constraints, constrained_probs):
         """
-        Calculate weighted probability for unconstrained tiles using global weighting.
+        Calculate weighted probability for unconstrained tiles.
 
         Args:
             constraints: List of constraints
@@ -162,34 +173,31 @@ class ProbabilityCalculator:
         Returns:
             float: Weighted probability for an unconstrained tile
         """
-        # Get all valid configurations
-        valid_configs = ConfigurationValidator.get_all_valid_configurations(constraints)
+        # Get all constrained tiles
+        constrained_tiles = set()
+        for constraint in constraints:
+            constrained_tiles.update(constraint.get_constrained_tiles())
+
+        # Generate configurations
+        valid_configs = ConfigurationGenerator.generate_valid_configurations(
+            constraints, constrained_tiles
+        )
 
         if not valid_configs:
-            # No constraints - use simple global probability
             return self._calculate_global_probability_value()
 
-        # Calculate global mine budget and tile counts
+        # Get global counts
         total_unknown = sum(1 for state in self.analyzer.get_all_values()
                           if state == AI_UNKNOWN)
         total_flagged = sum(1 for state in self.analyzer.get_all_values()
                           if state == AI_FLAGGED)
         remaining_mines = NUM_BOMBS - total_flagged
-
-        # Get constrained tiles
-        constrained_tiles = set()
-        for constraint in constraints:
-            constrained_tiles.update(constraint.get_constrained_tiles())
-
         unconstrained_count = total_unknown - len(constrained_tiles)
 
         if unconstrained_count == 0:
             return 0.0
 
-        # Calculate weighted average probability for unconstrained tiles
-        # Use log-space arithmetic to avoid overflow
-        import math
-
+        # Calculate weighted average probability
         log_weights = []
         probs = []
 
@@ -197,11 +205,9 @@ class ProbabilityCalculator:
             mines_in_config = config_info['mine_count']
             mines_for_unconstrained = remaining_mines - mines_in_config
 
-            # Log-weight = log(C(unconstrained_count, mines_for_unconstrained))
-            log_weight = ConfigurationValidator.log_combinations(unconstrained_count, mines_for_unconstrained)
+            log_weight = log_combinations(unconstrained_count, mines_for_unconstrained)
 
             if log_weight != float('-inf'):
-                # Probability for one unconstrained tile in this configuration
                 prob = mines_for_unconstrained / unconstrained_count
                 log_weights.append(log_weight)
                 probs.append(prob)
@@ -209,20 +215,10 @@ class ProbabilityCalculator:
         if not log_weights:
             return self._calculate_global_probability_value()
 
-        # Calculate weighted average using log-space arithmetic
-        # weighted_avg = sum(weight * prob) / sum(weight)
-        max_log_weight = max(log_weights)
-
-        # Numerator: sum(weight * prob)
-        numerator = sum(math.exp(log_weights[i] - max_log_weight) * probs[i] for i in range(len(log_weights)))
-
-        # Denominator: sum(weight)
-        denominator = sum(math.exp(lw - max_log_weight) for lw in log_weights)
-
-        return numerator / denominator
+        return weighted_average_in_log_space(log_weights, probs)
 
     def _calculate_global_probability_value(self):
-        """Helper to calculate simple global probability as a float value."""
+        """Calculate simple global probability as a float value."""
         total_unknown = sum(1 for state in self.analyzer.get_all_values()
                           if state == AI_UNKNOWN)
         total_flagged = sum(1 for state in self.analyzer.get_all_values()
@@ -237,7 +233,6 @@ class ProbabilityCalculator:
     def _calculate_global_probability(self, target_tile=None):
         """
         Calculate probability based on remaining mines / unknown tiles.
-        Used when no constraints exist or for unconstrained tiles.
 
         Returns:
             float if target_tile provided, dict otherwise
@@ -262,22 +257,19 @@ class ProbabilityCalculator:
 
     def _get_distance_to_frontier(self, tile):
         """
-        Calculate minimum distance from tile to any revealed/numbered tile (the frontier).
-        Lower distance = closer to known information.
+        Calculate minimum distance from tile to any revealed tile.
 
         Args:
             tile: Coordinate tuple (x, y)
 
         Returns:
-            int: Minimum Manhattan distance to frontier (0 = on frontier)
+            int: Minimum Manhattan distance to frontier
         """
         min_distance = float('inf')
 
         for coord in self.analyzer.get_all_coordinates():
             state = self.analyzer.get_tile_state(coord)
-            # Check if tile is revealed (not unknown, not flagged)
             if state not in [AI_UNKNOWN, AI_FLAGGED]:
-                # Calculate Manhattan distance
                 distance = abs(tile[0] - coord[0]) + abs(tile[1] - coord[1])
                 min_distance = min(min_distance, distance)
 
@@ -340,8 +332,6 @@ class ProbabilityCalculator:
         Returns:
             tuple: ((x, y), probability) or (None, 1.0) if no tiles available
         """
-        import random
-
         probabilities = self.calculate_probabilities()
 
         if not probabilities or not isinstance(probabilities, dict):
@@ -350,15 +340,14 @@ class ProbabilityCalculator:
         # Find minimum probability
         min_prob = min(probabilities.values())
 
-        # Get all tiles with minimum probability (handle ties)
+        # Get all tiles with minimum probability
         candidates = [(tile, prob) for tile, prob in probabilities.items()
                      if prob == min_prob]
 
         if len(candidates) == 1:
             return candidates[0]
 
-        # Multiple tiles with same probability - prefer frontier tiles
-        # Sort by distance to frontier (ascending = closer first)
+        # Tie-breaking: prefer frontier tiles
         candidates_with_distance = [
             (tile, prob, self._get_distance_to_frontier(tile))
             for tile, prob in candidates
