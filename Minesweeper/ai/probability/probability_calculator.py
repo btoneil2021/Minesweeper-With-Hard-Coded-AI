@@ -86,8 +86,13 @@ class ProbabilityCalculator:
         if not groups:
             return {}
 
-        # For simplicity, merge all groups into one for now
-        # (Independent groups could be optimized separately)
+        # Merge all groups to get complete set of constrained tiles.
+        # Note: Even though groups are mathematically independent for constraint
+        # satisfaction, we MUST process all constrained tiles together for correct
+        # global weighting. The weight C(unconstrained_count, mines_for_unconstrained)
+        # requires knowing the TRUE number of unconstrained tiles, which is:
+        #   total_unknown - len(ALL constrained tiles)
+        # Processing groups separately would incorrectly inflate unconstrained_count.
         all_constrained_tiles = set()
         for _, tiles in groups:
             all_constrained_tiles.update(tiles)
