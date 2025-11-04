@@ -51,13 +51,13 @@ class GameRunner:
     def _handle_events(self):
         """Process pygame events."""
         for event in py.event.get():
-            if event.type == py.QUIT:
-                self.running = False
-            elif event.type == py.MOUSEBUTTONDOWN and self._should_allow_player_input():
+            if event.type == py.MOUSEBUTTONDOWN and self._should_allow_player_input():
                 if event.button == 1:  # Left Click
                     self.game_logic.click_action("left")
                 elif event.button == 3:  # Right Click
                     self.game_logic.click_action("right")
+            elif event.type == py.QUIT:
+                self.running = False
             elif event.type == py.KEYDOWN and self.game_mode == MODE_HYBRID:
                 self._handle_hybrid_keys(event.key)
 
@@ -86,14 +86,9 @@ class GameRunner:
 
     def _check_and_handle_game_end(self):
         """Check for win/loss conditions and handle game restart."""
-        if self.game_logic.is_lost():
-            py.time.delay(GAME_RESTART_DELAY)
-            self._update_statistics(won=False)
-            self._reset_game()
-        elif self.game_logic.is_won():
-            py.time.delay(GAME_RESTART_DELAY)
-            self._update_statistics(won=True)
-            self._reset_game()
+        py.time.delay(GAME_RESTART_DELAY)
+        self._update_statistics(won=self.game_logic.is_won())
+        self._reset_game()
 
     def run(self):
         """Main game loop."""
