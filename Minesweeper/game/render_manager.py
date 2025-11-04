@@ -1,5 +1,6 @@
 import pygame as py
 from constants import *
+from .ui_bar import UIBar
 
 class RenderManager:
     """Manages pygame rendering and display."""
@@ -7,21 +8,27 @@ class RenderManager:
     def __init__(self, screen_size, font_size=30):
         self.screen = py.display.set_mode(screen_size)
         self.font = py.font.Font(None, font_size)
+        self.ui_bar = UIBar(screen_size[0], self.font)
 
     def render(self, board, win_rate: float, game_mode=None, ai_enabled=None):
-        """Draw the board and statistics."""
+        """Draw the UI bar and game board."""
         self.screen.fill(COLOR_WHITE)
-        board.draw(self.screen)
 
-        # Display win rate
-        text = self.font.render(f"Win Rate: {win_rate:.2%}", True, COLOR_BLACK)
-        self.screen.blit(text, (5, 5))
+        # Populate UI bar rows
+        self.ui_bar.set_row_content(0, f"Win Rate: {win_rate:.2%}", alignment='left')
 
-        # Display game mode info
         if game_mode is not None:
             mode_text = self._get_mode_text(game_mode, ai_enabled)
-            mode_surface = self.font.render(mode_text, True, COLOR_BLACK)
-            self.screen.blit(mode_surface, (5, 40))
+            self.ui_bar.set_row_content(1, mode_text, alignment='left')
+
+        # Row 2 is reserved for future use (left empty)
+
+        # Render UI bar at top
+        ui_bar_surface = self.ui_bar.render()
+        self.screen.blit(ui_bar_surface, (0, 0))
+
+        # Render board below UI bar
+        board.draw(self.screen, y_offset=UI_BAR_HEIGHT)
 
         py.display.update()
 
