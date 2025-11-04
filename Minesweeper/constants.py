@@ -2,7 +2,7 @@ import os
 from config import *
 
 # Derived configuration (calculated from config.py)
-SCREEN_SIZE = (TILE_SIZE * NUM_TILES_X, TILE_SIZE * NUM_TILES_Y)
+SCREEN_SIZE = (TILE_SIZE * NUM_TILES_X, TILE_SIZE * NUM_TILES_Y + UI_ROW_HEIGHT * 3)
 
 # Game mode constants
 MODE_AI_ONLY = 0
@@ -24,6 +24,10 @@ COLOR_BACKGROUND = (222, 184, 135)
 COLOR_TILE_HIDDEN = (184, 134, 77)
 COLOR_WHITE = (255, 255, 255)
 COLOR_BLACK = (0, 0, 0)
+
+# UI Bar
+UI_BAR_HEIGHT = UI_ROW_HEIGHT * 3  # Total UI bar height (3 rows)
+UI_BAR_COLOR = (200, 200, 200)     # Light gray background
 
 # Number colors for Minesweeper tiles
 NUMBER_COLORS = {

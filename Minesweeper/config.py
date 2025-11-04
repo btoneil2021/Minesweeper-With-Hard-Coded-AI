@@ -11,6 +11,7 @@ NUM_TILES_Y = 40       # Board height (number of tiles)
 # Display settings
 TILE_SIZE = 20         # Size of each tile in pixels
 FONT_SIZE = 30         # Font size for UI text
+UI_ROW_HEIGHT = 30     # Height of each UI bar row in pixels
 
 # Game modes
 # MODE_AI_ONLY = 0      : AI plays automatically
