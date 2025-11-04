@@ -61,10 +61,15 @@ class Board(NeighborUtils):
         tile = self.dictionary[key]
         self.dictionary[key] = Tile(x=tile.x, y=tile.y, value=val, isBomb=tile.isBomb, renderer=self.renderer)
 
-    def draw(self, screen):
-        """Draw all tiles on the screen"""
+    def draw(self, screen, y_offset=0):
+        """Draw all tiles on the screen.
+
+        Args:
+            screen: pygame surface to draw on
+            y_offset: Vertical offset in pixels (default: 0)
+        """
         for tile in self.dictionary.values():
-            tile.draw(screen)
+            tile.draw(screen, y_offset=y_offset)
 
     def get_tile(self, key):
         """Get a tile by its coordinate key"""

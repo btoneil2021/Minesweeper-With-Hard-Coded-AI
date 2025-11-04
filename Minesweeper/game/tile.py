@@ -12,8 +12,8 @@ class Tile:
         self.val = value
         self.renderer = renderer if renderer is not None else TileRenderer()
 
-    def draw(self, screen):
-        self.renderer.draw_tile(screen, self)
+    def draw(self, screen, y_offset=0):
+        self.renderer.draw_tile(screen, self, y_offset=y_offset)
 
     def set_revealed(self):
         """Reveal this tile (sets state to REVEALED or BOMB)"""
