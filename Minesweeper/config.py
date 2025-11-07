@@ -4,9 +4,9 @@ Modify these values to customize your game experience.
 """
 
 # Board configuration
-NUM_BOMBS = 300        # Number of mines on the board
-NUM_TILES_X = 40       # Board width (number of tiles)
-NUM_TILES_Y = 40       # Board height (number of tiles)
+NUM_BOMBS = 99        # Number of mines on the board
+NUM_TILES_X = 16       # Board width (number of tiles)
+NUM_TILES_Y = 30       # Board height (number of tiles)
 
 # Display settings
 TILE_SIZE = 20         # Size of each tile in pixels

@@ -86,9 +86,10 @@ class GameRunner:
 
     def _check_and_handle_game_end(self):
         """Check for win/loss conditions and handle game restart."""
-        py.time.delay(GAME_RESTART_DELAY)
-        self._update_statistics(won=self.game_logic.is_won())
-        self._reset_game()
+        if self.game_logic.is_lost() or self.game_logic.is_won():
+            py.time.delay(GAME_RESTART_DELAY)
+            self._update_statistics(won=self.game_logic.is_won())
+            self._reset_game()
 
     def run(self):
         """Main game loop."""
