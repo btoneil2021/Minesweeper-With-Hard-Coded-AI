@@ -34,6 +34,7 @@ For the external bot path, the runtime adapters are designed to use:
 - `mss` for fast screen capture when available
 - `Pillow` as the screenshot fallback
 - `pyautogui` for live mouse control
+- `pynput` for guarded live calibration point capture
 
 Those external dependencies are only needed if you actually run `--mode external`.
 
@@ -48,7 +49,7 @@ python -m pip install pygame pytest mypy
 If you want to try the external bot mode too:
 
 ```bash
-python -m pip install mss Pillow pyautogui
+python -m pip install mss Pillow pyautogui pynput
 ```
 
 ## Quick Start
@@ -126,7 +127,7 @@ python -m minesweeper --mode hybrid --width 40 --height 40 --mines 300 --tile-si
 6. feeds that snapshot into the existing analyzer and AI strategies
 7. executes the chosen moves through mouse clicks
 
-The current calibration flow asks you for:
+The current calibration flow gathers:
 
 - the top-left and bottom-right corners of the whole board
 - the top-left and bottom-right corners of one tile
@@ -134,6 +135,8 @@ The current calibration flow asks you for:
 
 During calibration, the wizard now:
 
+- asks you to hold `Shift` and left-click each requested board or tile corner
+- falls back to manual `(x,y)` entry if guarded live capture is unavailable, cancelled, or times out
 - captures the fully hidden board
 - clicks the center tile once
 - waits for the board to settle
@@ -145,7 +148,7 @@ Important notes:
 - external mode is intended for web or desktop Minesweeper boards outside the local Pygame client
 - the implementation is test-first and additive, so the architecture is in place even though live desktop behavior will still benefit from manual tuning
 - the launcher path for external mode lazy-loads the external automation modules, but the project still depends on `pygame` overall because the local game client ships in the same package
-- calibration currently uses terminal prompts rather than a dedicated GUI wizard
+- calibration still runs from terminal prompts rather than a dedicated GUI wizard, but point selection now prefers guarded live clicks
 - calibration now performs an automatic first reveal, so the target board should be in a fresh hidden state when you start
 - if screen capture or mouse-control dependencies are missing, live external mode will fail at runtime with a clear error
 
@@ -164,6 +167,7 @@ AI-enabled modes:
 External mode:
 
 - follow the terminal calibration prompts before the solve loop begins
+- hold `Shift` while left-clicking the requested calibration corners
 - move the target game window only when you intend to recalibrate
 - use `pyautogui`'s built-in failsafe behavior to stop live automation if needed
 

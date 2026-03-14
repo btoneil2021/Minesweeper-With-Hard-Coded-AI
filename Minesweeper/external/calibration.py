@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import colorsys
+import threading
 import time
 from collections.abc import Callable
 from importlib import import_module
@@ -24,6 +25,56 @@ class CalibrationResult(NamedTuple):
     height: int
     num_mines: int
     profiles: ColorProfiles
+
+
+class _PointCaptureUnavailable(RuntimeError):
+    pass
+
+
+class _PointCaptureCancelled(RuntimeError):
+    pass
+
+
+class _PynputModules(NamedTuple):
+    keyboard: Any
+    mouse: Any
+
+
+class _GuardedClickCollector:
+    def __init__(
+        self,
+        left_button: Any,
+        guard_keys: set[Any],
+        cancel_key: Any,
+    ) -> None:
+        self._left_button = left_button
+        self._guard_keys = guard_keys
+        self._cancel_key = cancel_key
+        self._guard_pressed = False
+        self.cancelled = False
+        self.point: tuple[int, int] | None = None
+
+    def on_press(self, key: Any) -> bool | None:
+        if key == self._cancel_key:
+            self.cancelled = True
+            return False
+        if key in self._guard_keys:
+            self._guard_pressed = True
+        return None
+
+    def on_release(self, key: Any) -> None:
+        if key in self._guard_keys:
+            self._guard_pressed = False
+
+    def on_click(self, x: int, y: int, button: Any, pressed: bool) -> bool | None:
+        if not pressed:
+            return None
+        if button != self._left_button:
+            return None
+        if not self._guard_pressed:
+            return None
+        self.point = (x, y)
+        return False
 
 
 class _TilePixelGrid:
@@ -150,6 +201,71 @@ def _default_read_int(prompt: str) -> int:
     return int(input(f"{prompt}: "))
 
 
+def _default_capture_point(
+    prompt: str,
+    manual_read_point: Callable[[str], tuple[int, int]],
+    live_picker: Callable[[str], tuple[int, int]],
+    output: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
+    emit = output or (lambda _message: None)
+    try:
+        return live_picker(prompt)
+    except _PointCaptureUnavailable as exc:
+        emit(f"{exc}. Falling back to manual coordinates.")
+        return manual_read_point(prompt)
+    except _PointCaptureCancelled as exc:
+        emit(f"{exc}. Falling back to manual coordinates.")
+        return manual_read_point(prompt)
+
+
+def _wait_for_guarded_click(
+    prompt: str,
+    output: Callable[[str], None] | None = None,
+    timeout_seconds: float = 10.0,
+    pynput_loader: Callable[[], _PynputModules | None] | None = None,
+) -> tuple[int, int]:
+    modules = (pynput_loader or _load_pynput)()
+    if modules is None:
+        raise _PointCaptureUnavailable("pynput is not installed")
+
+    emit = output or (lambda _message: None)
+    emit(f"{prompt}: hold Shift and left-click. Press Esc to cancel.")
+
+    keyboard_key = modules.keyboard.Key
+    collector = _GuardedClickCollector(
+        left_button=modules.mouse.Button.left,
+        guard_keys={keyboard_key.shift, keyboard_key.shift_l, keyboard_key.shift_r},
+        cancel_key=keyboard_key.esc,
+    )
+    finished = threading.Event()
+
+    def on_press(key: Any) -> bool | None:
+        should_stop = collector.on_press(key)
+        if should_stop is False:
+            finished.set()
+        return should_stop
+
+    def on_release(key: Any) -> None:
+        collector.on_release(key)
+
+    def on_click(x: int, y: int, button: Any, pressed: bool) -> bool | None:
+        should_stop = collector.on_click(x, y, button, pressed)
+        if should_stop is False:
+            finished.set()
+        return should_stop
+
+    keyboard_listener = modules.keyboard.Listener(on_press=on_press, on_release=on_release)
+    mouse_listener = modules.mouse.Listener(on_click=on_click)
+
+    with keyboard_listener, mouse_listener:
+        if not finished.wait(timeout_seconds):
+            raise _PointCaptureCancelled("Live point capture timed out")
+
+    if collector.point is not None:
+        return collector.point
+    raise _PointCaptureCancelled("Live point capture was cancelled")
+
+
 def _default_profile_builder(
     before_pixels: Any,
     after_pixels: Any,
@@ -180,19 +296,46 @@ def _load_pyautogui() -> Any | None:
         return None
 
 
+def _load_pynput() -> _PynputModules | None:
+    try:
+        return _PynputModules(
+            keyboard=import_module("pynput.keyboard"),
+            mouse=import_module("pynput.mouse"),
+        )
+    except ImportError:
+        return None
+
+
 class CalibrationWizard:
     def __init__(
         self,
         capture: ScreenCapture,
+        capture_point: Callable[[str], tuple[int, int]] | None = None,
         read_point: Callable[[str], tuple[int, int]] | None = None,
         read_int: Callable[[str], int] | None = None,
         click: Callable[[int, int], None] | None = None,
         sleep: Callable[[float], None] | None = None,
         settle_delay_ms: int = 750,
         profile_builder: Callable[[Any, Any, int, int, TileSize], ColorProfiles] | None = None,
+        output: Callable[[str], None] | None = None,
     ) -> None:
         self._capture = capture
-        self._read_point = read_point or _default_read_point
+        self._output = output or print
+        self._manual_read_point = read_point or _default_read_point
+        if capture_point is not None:
+            self._capture_point = capture_point
+        elif read_point is not None:
+            self._capture_point = read_point
+        else:
+            self._capture_point = lambda prompt: _default_capture_point(
+                prompt,
+                manual_read_point=self._manual_read_point,
+                live_picker=lambda live_prompt: _wait_for_guarded_click(
+                    live_prompt,
+                    output=self._output,
+                ),
+                output=self._output,
+            )
         self._read_int = read_int or _default_read_int
         self._click = click or _default_click
         self._sleep = sleep or time.sleep
@@ -200,8 +343,8 @@ class CalibrationWizard:
         self._profile_builder = profile_builder or _default_profile_builder
 
     def run(self) -> CalibrationResult:
-        board_top_left = self._read_point("Click the top-left corner of the top-left tile")
-        board_bottom_right = self._read_point(
+        board_top_left = self._capture_point("Click the top-left corner of the top-left tile")
+        board_bottom_right = self._capture_point(
             "Click the bottom-right corner of the bottom-right tile"
         )
         board_region = ScreenRegion(
@@ -211,8 +354,8 @@ class CalibrationWizard:
             height=board_bottom_right[1] - board_top_left[1],
         )
 
-        tile_top_left = self._read_point("Click the top-left corner of any single tile")
-        tile_bottom_right = self._read_point(
+        tile_top_left = self._capture_point("Click the top-left corner of any single tile")
+        tile_bottom_right = self._capture_point(
             "Click the bottom-right corner of that same tile"
         )
         tile_size = TileSize(

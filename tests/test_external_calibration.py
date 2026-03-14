@@ -3,9 +3,14 @@ import pytest
 from minesweeper.external.calibration import (
     CalibrationResult,
     CalibrationWizard,
+    _GuardedClickCollector,
+    _PointCaptureCancelled,
+    _PointCaptureUnavailable,
     _build_live_profiles,
     _changed_tiles,
+    _default_capture_point,
     _tile_pixels,
+    _wait_for_guarded_click,
 )
 from minesweeper.domain.types import Coord
 from minesweeper.external.capture import ScreenRegion, TileSize
@@ -35,6 +40,51 @@ class FakeCapture:
         return snapshot
 
 
+class FakeListener:
+    def __init__(self, **_kwargs: object) -> None:
+        self.stopped = False
+
+    def __enter__(self) -> "FakeListener":
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
+        return None
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
+class FakeKeyboardModule:
+    class Key:
+        shift = "shift"
+        shift_l = "shift_l"
+        shift_r = "shift_r"
+        esc = "esc"
+
+    Listener = FakeListener
+
+
+class FakeMouseModule:
+    class Button:
+        left = "left"
+        right = "right"
+
+    Listener = FakeListener
+
+
+class FakePynputModules:
+    keyboard = FakeKeyboardModule
+    mouse = FakeMouseModule
+
+
+def _raise_unavailable(_prompt: str) -> tuple[int, int]:
+    raise _PointCaptureUnavailable("live picker unavailable")
+
+
+def _raise_cancelled(_prompt: str) -> tuple[int, int]:
+    raise _PointCaptureCancelled("live picker cancelled")
+
+
 def test_calibration_result_carries_shared_geometry_and_profiles() -> None:
     profiles = ColorProfiles(
         hidden_bg=(20, 20, 20),
@@ -59,6 +109,76 @@ def test_calibration_result_carries_shared_geometry_and_profiles() -> None:
     assert result.height == 8
     assert result.num_mines == 10
     assert result.profiles is profiles
+
+
+def test_default_point_capture_falls_back_to_manual_when_live_picker_missing() -> None:
+    manual_prompts: list[str] = []
+
+    point = _default_capture_point(
+        "Pick a point",
+        manual_read_point=lambda prompt: manual_prompts.append(prompt) or (12, 34),
+        live_picker=_raise_unavailable,
+        output=lambda _message: None,
+    )
+
+    assert point == (12, 34)
+    assert manual_prompts == ["Pick a point"]
+
+
+def test_default_point_capture_falls_back_to_manual_when_live_picker_cancels() -> None:
+    manual_prompts: list[str] = []
+
+    point = _default_capture_point(
+        "Pick a point",
+        manual_read_point=lambda prompt: manual_prompts.append(prompt) or (56, 78),
+        live_picker=_raise_cancelled,
+        output=lambda _message: None,
+    )
+
+    assert point == (56, 78)
+    assert manual_prompts == ["Pick a point"]
+
+
+def test_default_point_capture_returns_live_point_when_picker_succeeds() -> None:
+    manual_prompts: list[str] = []
+
+    point = _default_capture_point(
+        "Pick a point",
+        manual_read_point=lambda prompt: manual_prompts.append(prompt) or (1, 2),
+        live_picker=lambda _prompt: (90, 45),
+        output=lambda _message: None,
+    )
+
+    assert point == (90, 45)
+    assert manual_prompts == []
+
+
+def test_live_picker_ignores_unmodified_clicks_until_guarded_click_arrives() -> None:
+    collector = _GuardedClickCollector(
+        left_button="left",
+        guard_keys={"shift"},
+        cancel_key="esc",
+    )
+
+    assert collector.on_click(10, 20, "left", True) is None
+    assert collector.point is None
+
+    collector.on_press("shift")
+    assert collector.on_click(30, 40, "right", True) is None
+    assert collector.point is None
+
+    assert collector.on_click(50, 60, "left", True) is False
+    assert collector.point == (50, 60)
+
+
+def test_wait_for_guarded_click_times_out_without_input() -> None:
+    with pytest.raises(_PointCaptureCancelled, match="timed out"):
+        _wait_for_guarded_click(
+            "Pick a point",
+            output=lambda _message: None,
+            timeout_seconds=0,
+            pynput_loader=lambda: FakePynputModules(),
+        )
 
 
 def test_wizard_derives_board_dimensions_from_region_and_tile_size() -> None:
@@ -96,6 +216,39 @@ def test_wizard_derives_board_dimensions_from_region_and_tile_size() -> None:
     assert result.num_mines == 12
     assert result.profiles == profiles
     assert profile_calls == [(4, 4, TileSize(10, 10))]
+
+
+def test_wizard_uses_capture_point_for_all_geometry_prompts() -> None:
+    points = iter([(10, 20), (50, 60), (10, 20), (20, 30)])
+    capture_prompts: list[str] = []
+
+    CalibrationWizard(
+        capture=FakeCapture(
+            [
+                FakePixelGrid([[(20, 20, 20)] * 40 for _ in range(40)]),
+                FakePixelGrid([[(220, 220, 220)] * 40 for _ in range(40)]),
+            ]
+        ),
+        capture_point=lambda prompt: capture_prompts.append(prompt) or next(points),
+        read_point=lambda _prompt: pytest.fail("manual point reader should not be used"),
+        read_int=lambda _prompt: 12,
+        click=lambda _x, _y: None,
+        sleep=lambda _seconds: None,
+        profile_builder=lambda *_args: ColorProfiles(
+            hidden_bg=(20, 20, 20),
+            revealed_bg=(220, 220, 220),
+            flagged_bg=None,
+            number_colors={},
+            mine_bg=None,
+        ),
+    ).run()
+
+    assert capture_prompts == [
+        "Click the top-left corner of the top-left tile",
+        "Click the bottom-right corner of the bottom-right tile",
+        "Click the top-left corner of any single tile",
+        "Click the bottom-right corner of that same tile",
+    ]
 
 
 def test_wizard_rejects_bad_tile_alignment() -> None:
