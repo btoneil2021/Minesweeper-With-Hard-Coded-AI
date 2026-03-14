@@ -120,9 +120,11 @@ python -m minesweeper --mode hybrid --width 40 --height 40 --mines 300 --tile-si
 
 1. runs an interactive terminal calibration flow
 2. captures a board region from the screen
-3. classifies visible tiles into the existing domain model
-4. feeds that snapshot into the existing analyzer and AI strategies
-5. executes the chosen moves through mouse clicks
+3. performs one automatic first reveal during calibration
+4. learns initial tile color profiles from before/after screenshots
+5. classifies visible tiles into the existing domain model
+6. feeds that snapshot into the existing analyzer and AI strategies
+7. executes the chosen moves through mouse clicks
 
 The current calibration flow asks you for:
 
@@ -130,12 +132,21 @@ The current calibration flow asks you for:
 - the top-left and bottom-right corners of one tile
 - the total mine count for the board
 
+During calibration, the wizard now:
+
+- captures the fully hidden board
+- clicks the center tile once
+- waits for the board to settle
+- captures the board again
+- derives initial hidden, revealed, and observed number colors from those screenshots
+
 Important notes:
 
 - external mode is intended for web or desktop Minesweeper boards outside the local Pygame client
 - the implementation is test-first and additive, so the architecture is in place even though live desktop behavior will still benefit from manual tuning
 - the launcher path for external mode lazy-loads the external automation modules, but the project still depends on `pygame` overall because the local game client ships in the same package
 - calibration currently uses terminal prompts rather than a dedicated GUI wizard
+- calibration now performs an automatic first reveal, so the target board should be in a fresh hidden state when you start
 - if screen capture or mouse-control dependencies are missing, live external mode will fail at runtime with a clear error
 
 ## Controls
