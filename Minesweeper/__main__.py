@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from typing import Literal
 
 from minesweeper.app import App
 from minesweeper.domain.types import AI_ONLY, HYBRID, PLAYER_ONLY, GameConfig, GameMode
+
+ExternalMode = Literal["external"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -12,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m minesweeper")
     parser.add_argument(
         "--mode",
-        choices=("player", "ai", "hybrid"),
+        choices=("player", "ai", "hybrid", "external"),
         default="player",
         help="Game mode to launch",
     )
@@ -34,11 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_mode(value: str) -> GameMode:
+def parse_mode(value: str) -> GameMode | ExternalMode:
     mapping = {
         "player": PLAYER_ONLY,
         "ai": AI_ONLY,
         "hybrid": HYBRID,
+        "external": "external",
     }
     return mapping[value]
 
@@ -46,6 +50,17 @@ def parse_mode(value: str) -> GameMode:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    mode = parse_mode(args.mode)
+
+    if mode == "external":
+        from minesweeper.external.app import ExternalApp
+        from minesweeper.external.calibration import CalibrationWizard
+        from minesweeper.external.capture import ScreenCapture
+
+        capture = ScreenCapture()
+        calibration = CalibrationWizard(capture).run()
+        ExternalApp(calibration).run()
+        return 0
 
     try:
         config = GameConfig(
@@ -58,7 +73,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    App(config, parse_mode(args.mode)).run()
+    App(config, mode).run()
     return 0
 
 

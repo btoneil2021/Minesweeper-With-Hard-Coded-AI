@@ -1,6 +1,6 @@
 # Minesweeper Rewrite
 
-A modern Pygame rewrite of Minesweeper with a built-in AI solver.
+A modern Minesweeper rewrite with a local Pygame game client, a built-in AI solver, and an additive external bot foundation for web-based boards.
 
 The current rewrite lives under the lowercase `minesweeper/` package and separates the project into clear layers:
 
@@ -9,6 +9,7 @@ The current rewrite lives under the lowercase `minesweeper/` package and separat
 - `minesweeper/ai/` for analysis and solver strategies
 - `minesweeper/ui/` for rendering and input translation
 - `minesweeper/app.py` for top-level orchestration
+- `minesweeper/external/` for screen capture, calibration, and external-board automation
 
 The current UI includes:
 
@@ -28,12 +29,26 @@ For development and verification:
 - `pytest`
 - optionally `mypy`
 
+For the external bot path, the runtime adapters are designed to use:
+
+- `mss` for fast screen capture when available
+- `Pillow` as the screenshot fallback
+- `pyautogui` for live mouse control
+
+Those external dependencies are only needed if you actually run `--mode external`.
+
 Example setup:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install pygame pytest mypy
+```
+
+If you want to try the external bot mode too:
+
+```bash
+python -m pip install mss Pillow pyautogui
 ```
 
 ## Quick Start
@@ -54,7 +69,7 @@ python -m minesweeper --help
 
 The launcher supports:
 
-- `--mode {player,ai,hybrid}`
+- `--mode {player,ai,hybrid,external}`
 - `--width`
 - `--height`
 - `--mines`
@@ -81,6 +96,12 @@ Hybrid mode:
 python -m minesweeper --mode hybrid
 ```
 
+External mode:
+
+```bash
+python -m minesweeper --mode external
+```
+
 Classic intermediate-style board:
 
 ```bash
@@ -93,6 +114,30 @@ Large demo board:
 python -m minesweeper --mode hybrid --width 40 --height 40 --mines 300 --tile-size 20 --font-size 26
 ```
 
+## External Mode
+
+`external` mode is the new additive bot foundation. Instead of owning the game state locally, it:
+
+1. runs an interactive terminal calibration flow
+2. captures a board region from the screen
+3. classifies visible tiles into the existing domain model
+4. feeds that snapshot into the existing analyzer and AI strategies
+5. executes the chosen moves through mouse clicks
+
+The current calibration flow asks you for:
+
+- the top-left and bottom-right corners of the whole board
+- the top-left and bottom-right corners of one tile
+- the total mine count for the board
+
+Important notes:
+
+- external mode is intended for web or desktop Minesweeper boards outside the local Pygame client
+- the implementation is test-first and additive, so the architecture is in place even though live desktop behavior will still benefit from manual tuning
+- the launcher path for external mode lazy-loads the external automation modules, but the project still depends on `pygame` overall because the local game client ships in the same package
+- calibration currently uses terminal prompts rather than a dedicated GUI wizard
+- if screen capture or mouse-control dependencies are missing, live external mode will fail at runtime with a clear error
+
 ## Controls
 
 Player input:
@@ -104,6 +149,12 @@ AI-enabled modes:
 
 - `Space`: toggle AI on/off when the mode allows toggling
 - `S`: run one AI step
+
+External mode:
+
+- follow the terminal calibration prompts before the solve loop begins
+- move the target game window only when you intend to recalibrate
+- use `pyautogui`'s built-in failsafe behavior to stop live automation if needed
 
 ## AI Strategy Order
 
@@ -140,6 +191,7 @@ minesweeper/
 ├── app.py
 ├── domain/
 ├── engine/
+├── external/
 └── ui/
 
 tests/
@@ -149,6 +201,13 @@ tests/
 ├── test_constraint_subtractor.py
 ├── test_coord.py
 ├── test_domain_contracts.py
+├── test_external_app.py
+├── test_external_board_reader.py
+├── test_external_calibration.py
+├── test_external_capture.py
+├── test_external_classifier.py
+├── test_external_executor.py
+├── test_external_imports.py
 ├── test_game_config.py
 ├── test_game_engine.py
 ├── test_main.py
@@ -178,4 +237,5 @@ python3 -m mypy --strict minesweeper
 
 - The active package is `minesweeper`, not the legacy uppercase `Minesweeper`
 - The rewrite is intended to be runnable directly from the repo with `python -m minesweeper`
+- The external bot implementation is intentionally additive and reuses the same analyzer and strategy chain as the local game
 - The planning docs under `docs/plans/` are local working artifacts and may be git-ignored in this checkout
