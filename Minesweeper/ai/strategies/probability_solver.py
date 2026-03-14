@@ -1,6 +1,6 @@
 from itertools import combinations
 import math
-from typing import Optional
+from collections.abc import Sequence
 
 from minesweeper.ai.analyzer import AnalyzedBoard
 from minesweeper.ai.constraint import Constraint
@@ -18,16 +18,16 @@ class ProbabilitySolver:
     def name(self) -> str:
         return "ProbabilitySolver"
 
-    def find_move(self, analysis: AnalyzedBoard) -> Optional[Move]:
+    def find_moves(self, analysis: AnalyzedBoard) -> Sequence[Move]:
         unknowns = sorted(analysis.unknown_coords, key=self._sort_key)
         if not unknowns:
-            return None
+            return []
 
         remaining_mines = analysis.total_mines - len(analysis.flagged_coords)
         constraints = self._constraints(analysis)
 
         if not constraints:
-            return self._global_move(unknowns, remaining_mines)
+            return [self._global_move(unknowns, remaining_mines)]
 
         constrained_tiles = sorted(
             {tile for constraint in constraints for tile in constraint.unknowns},
@@ -38,7 +38,7 @@ class ProbabilitySolver:
         ]
 
         if len(constrained_tiles) > self.MAX_EXACT_TILES:
-            return self._global_move(unknowns, remaining_mines)
+            return [self._global_move(unknowns, remaining_mines)]
 
         probabilities = self._exact_probabilities(
             constraints=constraints,
@@ -47,9 +47,13 @@ class ProbabilitySolver:
             remaining_mines=remaining_mines,
         )
         if not probabilities:
-            return self._global_move(unknowns, remaining_mines)
+            return [self._global_move(unknowns, remaining_mines)]
 
-        return self._best_move(probabilities)
+        certain_moves = self._certain_moves(probabilities)
+        if certain_moves:
+            return certain_moves
+
+        return [self._best_move(probabilities)]
 
     def _exact_probabilities(
         self,
@@ -114,6 +118,19 @@ class ProbabilitySolver:
         probability = remaining_mines / len(unknowns)
         action = ActionType.FLAG if probability >= self._flag_threshold else ActionType.REVEAL
         return Move(action, unknowns[0])
+
+    def _certain_moves(self, probabilities: dict[Coord, float]) -> list[Move]:
+        flags = [
+            Move(ActionType.FLAG, coord)
+            for coord, probability in sorted(probabilities.items(), key=lambda item: self._sort_key(item[0]))
+            if probability == 1.0
+        ]
+        reveals = [
+            Move(ActionType.REVEAL, coord)
+            for coord, probability in sorted(probabilities.items(), key=lambda item: self._sort_key(item[0]))
+            if probability == 0.0
+        ]
+        return flags + reveals
 
     def _constraints(self, analysis: AnalyzedBoard) -> list[Constraint]:
         constraints: list[Constraint] = []

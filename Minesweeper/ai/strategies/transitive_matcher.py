@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from collections.abc import Sequence
 
 from minesweeper.ai.analyzer import AnalyzedBoard
 from minesweeper.domain.move import Move
@@ -22,25 +22,28 @@ class TransitiveMatcher:
     def name(self) -> str:
         return "TransitiveMatcher"
 
-    def find_move(self, analysis: AnalyzedBoard) -> Optional[Move]:
+    def find_moves(self, analysis: AnalyzedBoard) -> Sequence[Move]:
         frontier = set(analysis.frontier)
+        moves: list[Move] = []
+        seen: set[Move] = set()
         for coord in analysis.frontier:
             for neighbor in self._cardinal_neighbors(coord):
                 if neighbor not in frontier:
                     continue
 
                 move = self._check_pair(coord, neighbor, analysis)
-                if move is not None:
-                    return move
+                if move is not None and move not in seen:
+                    seen.add(move)
+                    moves.append(move)
 
-        return None
+        return moves
 
     def _check_pair(
         self,
         current: Coord,
         neighbor: Coord,
         analysis: AnalyzedBoard,
-    ) -> Optional[Move]:
+    ) -> Move | None:
         current_ctx = self._tile_context(current, analysis)
         neighbor_ctx = self._tile_context(neighbor, analysis)
         possibilities = [

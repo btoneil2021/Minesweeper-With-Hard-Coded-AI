@@ -18,11 +18,12 @@ def test_all_bombs_flagged_reveals_safe() -> None:
         flagged_coords=frozenset({Coord(0, 0)}),
     )
 
-    move = PatternDetector().find_move(analysis)
+    moves = PatternDetector().find_moves(analysis)
 
-    assert move is not None
-    assert move.action == ActionType.REVEAL
-    assert move.coord in safe_options
+    assert moves == [
+        (ActionType.REVEAL, Coord(0, 1)),
+        (ActionType.REVEAL, Coord(1, 0)),
+    ]
 
 
 def test_all_unknowns_are_bombs_flags() -> None:
@@ -35,11 +36,12 @@ def test_all_unknowns_are_bombs_flags() -> None:
         flagged_coords=frozenset(),
     )
 
-    move = PatternDetector().find_move(analysis)
+    moves = PatternDetector().find_moves(analysis)
 
-    assert move is not None
-    assert move.action == ActionType.FLAG
-    assert move.coord in bomb_options
+    assert moves == [
+        (ActionType.FLAG, Coord(0, 1)),
+        (ActionType.FLAG, Coord(1, 0)),
+    ]
 
 
 def test_no_pattern_returns_none() -> None:
@@ -51,7 +53,7 @@ def test_no_pattern_returns_none() -> None:
         flagged_coords=frozenset({Coord(0, 0)}),
     )
 
-    assert PatternDetector().find_move(analysis) is None
+    assert PatternDetector().find_moves(analysis) == []
 
 
 def test_skips_non_frontier_tiles() -> None:
@@ -63,4 +65,4 @@ def test_skips_non_frontier_tiles() -> None:
         flagged_coords=frozenset(),
     )
 
-    assert PatternDetector().find_move(analysis) is None
+    assert PatternDetector().find_moves(analysis) == []

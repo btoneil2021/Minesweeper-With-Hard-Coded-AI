@@ -1,4 +1,4 @@
-from typing import Optional
+from collections.abc import Sequence
 
 from minesweeper.ai.analyzer import AnalyzedBoard
 from minesweeper.domain.move import Move
@@ -10,11 +10,13 @@ class ConstraintSubtractor:
     def name(self) -> str:
         return "ConstraintSubtractor"
 
-    def find_move(self, analysis: AnalyzedBoard) -> Optional[Move]:
+    def find_moves(self, analysis: AnalyzedBoard) -> Sequence[Move]:
         constraints = [
             self._constraint_for(coord, analysis)
             for coord in analysis.frontier
         ]
+        moves: list[Move] = []
+        seen: set[Move] = set()
 
         for left_unknowns, left_remaining in constraints:
             for right_unknowns, right_remaining in constraints:
@@ -28,12 +30,20 @@ class ConstraintSubtractor:
                 remaining = left_remaining - right_remaining
 
                 if difference and remaining == 0:
-                    return Move(ActionType.REVEAL, difference[0])
+                    for coord in difference:
+                        move = Move(ActionType.REVEAL, coord)
+                        if move not in seen:
+                            seen.add(move)
+                            moves.append(move)
 
                 if difference and remaining == len(difference):
-                    return Move(ActionType.FLAG, difference[0])
+                    for coord in difference:
+                        move = Move(ActionType.FLAG, coord)
+                        if move not in seen:
+                            seen.add(move)
+                            moves.append(move)
 
-        return None
+        return moves
 
     def _constraint_for(
         self,

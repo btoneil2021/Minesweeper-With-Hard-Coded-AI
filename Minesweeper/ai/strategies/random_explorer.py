@@ -1,5 +1,5 @@
 import random
-from typing import Optional
+from collections.abc import Sequence
 
 from minesweeper.ai.analyzer import AnalyzedBoard
 from minesweeper.domain.move import Move
@@ -14,9 +14,9 @@ class RandomExplorer:
     def name(self) -> str:
         return "RandomExplorer"
 
-    def find_move(self, analysis: AnalyzedBoard) -> Optional[Move]:
+    def find_moves(self, analysis: AnalyzedBoard) -> Sequence[Move]:
         if not analysis.unknown_coords:
-            return None
+            return []
 
         coord = self._rng.choice(tuple(analysis.unknown_coords))
-        return Move(ActionType.REVEAL, coord)
+        return [Move(ActionType.REVEAL, coord)]

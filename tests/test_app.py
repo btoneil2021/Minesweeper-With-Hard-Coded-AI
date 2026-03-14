@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import minesweeper.app as app_module
+from minesweeper.ai.analyzer import AnalyzedBoard
+from minesweeper.domain.move import Move
 from minesweeper.domain.tile import Tile
-from minesweeper.domain.types import Coord, GameConfig, GamePhase, PLAYER_ONLY, TileState
+from minesweeper.domain.types import (
+    ActionType,
+    Coord,
+    GameConfig,
+    GamePhase,
+    PLAYER_ONLY,
+    TileState,
+)
 
 
 class StubBoard:
@@ -44,6 +53,51 @@ class RecordingRenderer:
 
     def board_coord_from_screen(self, screen_x: int, screen_y: int) -> Coord | None:
         return None
+
+
+class RecordingMoveGame:
+    def __init__(self) -> None:
+        self.board = object()
+        self.phase = GamePhase.IN_PROGRESS
+        self.applied_moves: list[Move] = []
+
+    def apply_move(self, move: Move) -> list[Coord]:
+        self.applied_moves.append(move)
+        return [move.coord]
+
+
+class StubAnalyzer:
+    def __init__(self, analysis: AnalyzedBoard) -> None:
+        self._analysis = analysis
+
+    def analyze(self, board: object) -> AnalyzedBoard:
+        return self._analysis
+
+
+class StubBatchStrategy:
+    def __init__(self, moves: list[Move]) -> None:
+        self._moves = moves
+        self.calls = 0
+
+    @property
+    def name(self) -> str:
+        return "StubBatchStrategy"
+
+    def find_moves(self, analysis: AnalyzedBoard) -> list[Move]:
+        self.calls += 1
+        return self._moves
+
+
+class FailingStrategy:
+    calls = 0
+
+    @property
+    def name(self) -> str:
+        return "FailingStrategy"
+
+    def find_moves(self, analysis: AnalyzedBoard) -> list[Move]:
+        self.calls += 1
+        raise AssertionError("lower-priority strategy should not be called")
 
 
 def test_app_renders_lost_board_before_reset(monkeypatch) -> None:
@@ -91,3 +145,29 @@ def test_app_renders_lost_board_before_reset(monkeypatch) -> None:
         }
     ]
     assert game.reset_calls == 1
+
+
+def test_ai_turn_applies_full_batch_from_first_matching_strategy(monkeypatch) -> None:
+    game = RecordingMoveGame()
+    batch = [
+        Move(ActionType.REVEAL, Coord(0, 0)),
+        Move(ActionType.FLAG, Coord(1, 1)),
+    ]
+    first = StubBatchStrategy(batch)
+    second = FailingStrategy()
+
+    monkeypatch.setattr(app_module, "PygameRenderer", lambda _config: object())
+    monkeypatch.setattr(app_module, "Game", lambda _config, _rng: game)
+
+    app = app_module.App(GameConfig())
+    app._analyzer = StubAnalyzer(
+        AnalyzedBoard(unknown_coords=frozenset({Coord(0, 0), Coord(1, 1)}))
+    )
+    app._strategies = [first, second]
+
+    app._run_ai_turn()
+
+    assert game.applied_moves == batch
+    assert first.calls == 1
+    assert second.calls == 0
+    assert app._is_evaluable is True

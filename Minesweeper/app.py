@@ -98,20 +98,21 @@ class App:
             if isinstance(strategy, RandomExplorer) and self._has_revealed_zero():
                 continue
 
-            move = strategy.find_move(analysis)
-            if move is None:
+            moves = strategy.find_moves(analysis)
+            if not moves:
                 continue
 
             if not isinstance(strategy, RandomExplorer):
                 self._is_evaluable = True
 
-            try:
-                self._game.apply_move(move)
-            except ValueError:
-                return
+            for move in moves:
+                try:
+                    self._game.apply_move(move)
+                except ValueError:
+                    return
 
-            if self._config.ai_click_feedback:
-                pygame.time.delay(60)
+                if self._config.ai_click_feedback:
+                    pygame.time.delay(60)
             return
 
     def _has_revealed_zero(self) -> bool:

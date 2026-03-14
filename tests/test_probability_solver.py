@@ -17,11 +17,9 @@ def test_certain_mine_flags() -> None:
         total_mines=1,
     )
 
-    move = ProbabilitySolver().find_move(analysis)
-
-    assert move is not None
-    assert move.action == ActionType.FLAG
-    assert move.coord == target
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.FLAG, target),
+    ]
 
 
 def test_certain_safe_reveals() -> None:
@@ -36,11 +34,44 @@ def test_certain_safe_reveals() -> None:
         total_mines=1,
     )
 
-    move = ProbabilitySolver().find_move(analysis)
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.REVEAL, target),
+    ]
 
-    assert move is not None
-    assert move.action == ActionType.REVEAL
-    assert move.coord == target
+
+def test_returns_all_certain_safe_moves() -> None:
+    frontier = Coord(1, 1)
+    flagged = Coord(0, 1)
+    safe_tiles = [Coord(0, 0), Coord(1, 0)]
+    analysis = AnalyzedBoard(
+        grid={frontier: 1},
+        frontier=[frontier],
+        unknown_coords=frozenset(safe_tiles),
+        flagged_coords=frozenset({flagged}),
+        total_mines=1,
+    )
+
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.REVEAL, Coord(0, 0)),
+        (ActionType.REVEAL, Coord(1, 0)),
+    ]
+
+
+def test_returns_all_certain_mines() -> None:
+    frontier = Coord(1, 1)
+    mine_tiles = [Coord(0, 0), Coord(1, 0)]
+    analysis = AnalyzedBoard(
+        grid={frontier: 2},
+        frontier=[frontier],
+        unknown_coords=frozenset(mine_tiles),
+        flagged_coords=frozenset(),
+        total_mines=2,
+    )
+
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.FLAG, Coord(0, 0)),
+        (ActionType.FLAG, Coord(1, 0)),
+    ]
 
 
 def test_chooses_lowest_probability() -> None:
@@ -56,11 +87,9 @@ def test_chooses_lowest_probability() -> None:
         total_mines=1,
     )
 
-    move = ProbabilitySolver().find_move(analysis)
-
-    assert move is not None
-    assert move.action == ActionType.REVEAL
-    assert move.coord == r
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.REVEAL, r),
+    ]
 
 
 def test_high_probability_flags() -> None:
@@ -74,11 +103,9 @@ def test_high_probability_flags() -> None:
         total_mines=1,
     )
 
-    move = ProbabilitySolver().find_move(analysis)
-
-    assert move is not None
-    assert move.action == ActionType.FLAG
-    assert move.coord == target
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.FLAG, target),
+    ]
 
 
 def test_falls_back_to_global_probability() -> None:
@@ -87,11 +114,11 @@ def test_falls_back_to_global_probability() -> None:
         total_mines=2,
     )
 
-    move = ProbabilitySolver().find_move(analysis)
+    moves = ProbabilitySolver().find_moves(analysis)
 
-    assert move is not None
-    assert move.action == ActionType.REVEAL
-    assert move.coord in analysis.unknown_coords
+    assert len(moves) == 1
+    assert moves[0][0] == ActionType.REVEAL
+    assert moves[0][1] in analysis.unknown_coords
 
 
 def test_unconstrained_tiles_weighted_by_configurations() -> None:
@@ -108,17 +135,16 @@ def test_unconstrained_tiles_weighted_by_configurations() -> None:
         total_mines=1,
     )
 
-    move = ProbabilitySolver().find_move(analysis)
-
-    assert move is not None
-    assert move.action == ActionType.REVEAL
-    assert move.coord == r
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.REVEAL, r),
+        (ActionType.REVEAL, s),
+    ]
 
 
 def test_returns_none_when_no_unknowns() -> None:
     analysis = AnalyzedBoard(unknown_coords=frozenset(), total_mines=0)
 
-    assert ProbabilitySolver().find_move(analysis) is None
+    assert ProbabilitySolver().find_moves(analysis) == []
 
 
 def test_does_not_enumerate_unconstrained_unknowns(monkeypatch) -> None:
@@ -143,11 +169,9 @@ def test_does_not_enumerate_unconstrained_unknowns(monkeypatch) -> None:
 
     monkeypatch.setattr(probability_solver_module, "combinations", guarded_combinations)
 
-    move = ProbabilitySolver().find_move(analysis)
-
-    assert move is not None
-    assert move.action == ActionType.REVEAL
-    assert move.coord == Coord(10, 10)
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.REVEAL, Coord(10, 10)),
+    ]
 
 
 def test_large_constrained_region_falls_back_without_exact_enumeration(monkeypatch) -> None:
@@ -169,8 +193,6 @@ def test_large_constrained_region_falls_back_without_exact_enumeration(monkeypat
 
     monkeypatch.setattr(probability_solver_module, "combinations", guarded_combinations)
 
-    move = ProbabilitySolver().find_move(analysis)
-
-    assert move is not None
-    assert move.action == ActionType.FLAG
-    assert move.coord == Coord(0, 1)
+    assert ProbabilitySolver().find_moves(analysis) == [
+        (ActionType.FLAG, Coord(0, 1)),
+    ]
