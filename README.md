@@ -1,166 +1,181 @@
-# Minesweeper with AI Solver
+# Minesweeper Rewrite
 
-A Python implementation of Minesweeper featuring an advanced AI that uses logical deduction and probability analysis to solve boards autonomously.
+A modern Pygame rewrite of Minesweeper with a built-in AI solver.
 
-## Features
+The current rewrite lives under the lowercase `minesweeper/` package and separates the project into clear layers:
 
-### Game Modes
-The game supports three different play modes:
+- `minesweeper/domain/` for shared types and protocols
+- `minesweeper/engine/` for board state, rules, and stats
+- `minesweeper/ai/` for analysis and solver strategies
+- `minesweeper/ui/` for rendering and input translation
+- `minesweeper/app.py` for top-level orchestration
 
-1. **AI Only Mode** - Watch the AI play automatically using advanced solving techniques
-2. **Player Only Mode** - Classic manual Minesweeper gameplay
-3. **Hybrid Mode** - Play manually with AI assistance available at the press of a button
+The current UI includes:
 
-### Game Engine
-- Classic Minesweeper gameplay with configurable board dimensions (default: 40×40 grid with 300 mines)
-- Interactive GUI built with Pygame
-- Automatic game restart with performance tracking
-- Win rate statistics
-- On-screen mode and AI status display
+- a dark, modern board theme
+- framed playfield and header bar
+- hover feedback for playable tiles
+- classic Minesweeper number colors
+- asset-backed bomb rendering with fallback behavior
 
-### AI Solver
-The AI employs multiple sophisticated strategies to solve Minesweeper boards:
+## Requirements
 
-1. **Pattern Detection** ([pattern_detector.py](Minesweeper/ai/pattern_detector.py))
-   - Identifies obvious mines (when unrevealed tiles equal the tile number)
-   - Detects safe tiles (when all mines around a tile are flagged)
+- Python 3.10+
+- `pygame`
 
-2. **Transitive Pattern Matching** ([transitive_pattern_matcher.py](Minesweeper/ai/transitive_pattern_matcher.py))
-   - Advanced logical deduction using relationships between adjacent tiles
-   - Analyzes directional patterns to identify safe tiles and mines
-   - Handles complex scenarios like shared constraints between tiles
+For development and verification:
 
-3. **Constraint Satisfaction Probability (NOT FINISHED)** ([probability_calculator.py](Minesweeper/ai/probability/probability_calculator.py))
-   - Calculates mine probabilities using constraint satisfaction
-   - Enumerates valid configurations to determine optimal moves
-   - Falls back to global probability when local constraints are insufficient
+- `pytest`
+- optionally `mypy`
 
-## Project Structure
+Example setup:
 
-```
-Minesweeper/
-├── game_runner.py              # Main game loop orchestration
-├── config.py                   # User-configurable settings
-├── constants.py                # Internal constants
-├── game/
-│   ├── board.py               # Board state and tile management
-│   ├── game_logic.py          # Game rules and interactions
-│   ├── tile.py                # Tile representation
-│   ├── render_manager.py     # Display rendering
-│   ├── statistics_tracker.py # Win rate tracking
-│   └── neighbor_utils.py     # Neighbor calculation utilities
-└── ai/
-    ├── ai_strategy.py         # High-level AI decision engine
-    ├── ai_controller.py       # AI move execution
-    ├── board_analyzer.py      # Board state analysis
-    ├── pattern_detector.py    # Pattern recognition
-    ├── transitive_pattern_matcher.py  # Advanced pattern logic
-    └── probability/
-        ├── probability_calculator.py  # Probability computation
-        ├── constraint_collector.py    # Constraint gathering
-        ├── constraint.py              # Constraint representation
-        └── configuration_emulator.py  # Configuration enumeration
-```
-
-## Installation
-
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/Minesweeper-With-Hard-Coded-AI.git
-cd Minesweeper-With-Hard-Coded-AI
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install pygame pytest mypy
 ```
 
-2. Install dependencies:
+## Quick Start
+
+Launch the default player mode:
+
 ```bash
-pip install pygame
+python -m minesweeper
 ```
 
-## Usage
+Show launcher help:
 
-Run the game:
 ```bash
-python Minesweeper/game_runner.py
+python -m minesweeper --help
 ```
 
-You'll be prompted to select a game mode:
-- **0** - AI Only Mode: AI plays automatically
-- **1** - Player Only Mode: Manual play only
-- **2** - Hybrid Mode: Manual play with AI assistance
+## Launch Options
 
-Press Enter to use the default mode configured in [config.py](Minesweeper/config.py).
+The launcher supports:
 
-### Controls
+- `--mode {player,ai,hybrid}`
+- `--width`
+- `--height`
+- `--mines`
+- `--tile-size`
+- `--font-size`
 
-**Player Only Mode:**
-- **Left Click**: Reveal a tile
-- **Right Click**: Flag/unflag a tile
+Examples:
 
-**Hybrid Mode:**
-- **Left Click**: Reveal a tile
-- **Right Click**: Flag/unflag a tile
-- **SPACE**: Toggle AI automation on/off
-- **S**: Execute a single AI step
+Player mode:
 
-**AI Only Mode:**
-- No controls needed - watch the AI solve!
-
-## Configuration
-
-Modify game settings in [config.py](Minesweeper/config.py):
-
-```python
-# Board configuration
-NUM_BOMBS = 300        # Number of mines on the board
-NUM_TILES_X = 40       # Board width (number of tiles)
-NUM_TILES_Y = 40       # Board height (number of tiles)
-
-# Display settings
-TILE_SIZE = 20         # Size of each tile in pixels
-FONT_SIZE = 30         # Font size for UI text
-
-# Game mode (0 = AI Only, 1 = Player Only, 2 = Hybrid)
-GAME_MODE = 0          # Default game mode
-
-# Game timing
-GAME_RESTART_DELAY = 1000  # Delay in milliseconds before restarting
-
-# AI configuration
-AI_CLICK_FEEDBACK = False  # Show visual mouse cursor for AI moves
+```bash
+python -m minesweeper --mode player
 ```
 
-## How the AI Works
+AI-only mode:
 
-The AI uses a hierarchical decision-making process:
+```bash
+python -m minesweeper --mode ai
+```
 
-1. **Initial Random Move**: Makes a random first move to reveal the initial board state
-2. **Deterministic Logic**: Applies pattern detection to find guaranteed safe tiles and mines
-3. **Transitive Reasoning**: Uses relationships between adjacent tiles for complex deductions
-4. **Probability Analysis (IN PROGRESS)**: When logic is insufficient, calculates mine probabilities using constraint satisfaction
-5. **Move Execution**: Takes the safest action available
+Hybrid mode:
 
-The AI only tracks statistics for games where it made it out of the first random guessing phase, ensuring meaningful win rate metrics.
+```bash
+python -m minesweeper --mode hybrid
+```
 
-## Game Modes in Detail
+Classic intermediate-style board:
 
-### AI Only Mode
-Perfect for:
-- Watching the AI solve complex board configurations
-- Analyzing AI performance and win rates
-- Understanding advanced Minesweeper solving techniques
+```bash
+python -m minesweeper --mode player --width 16 --height 16 --mines 40
+```
 
-### Player Only Mode
-Perfect for:
-- Traditional Minesweeper gameplay
-- Practicing your own solving skills
-- Competing against the AI's win rate
+Large demo board:
 
-### Hybrid Mode
-Perfect for:
-- Learning from the AI while playing
-- Getting help when stuck on difficult patterns
-- Training yourself to recognize patterns the AI uses
-- Using the AI as a "hint" system (single step with 'S' key)
+```bash
+python -m minesweeper --mode hybrid --width 40 --height 40 --mines 300 --tile-size 20 --font-size 26
+```
 
-## License
+## Controls
 
-This project is open source and available for educational purposes.
+Player input:
+
+- Left click: reveal
+- Right click: flag or unflag
+
+AI-enabled modes:
+
+- `Space`: toggle AI on/off when the mode allows toggling
+- `S`: run one AI step
+
+## AI Strategy Order
+
+The solver currently evaluates strategies in this order:
+
+1. `RandomExplorer`
+2. `PatternDetector`
+3. `ConstraintSubtractor`
+4. `TransitiveMatcher`
+5. `ProbabilitySolver`
+
+The app only counts games as evaluable once the AI has moved beyond the random opening phase.
+
+## Default Configuration
+
+`GameConfig` defaults to:
+
+- width: `30`
+- height: `16`
+- mines: `99`
+- tile size: `20`
+- font size: `30`
+- restart delay: `1000 ms`
+- AI click feedback: `False`
+
+Mine count must always be less than `width * height`.
+
+## Project Layout
+
+```text
+minesweeper/
+├── __main__.py
+├── ai/
+├── app.py
+├── domain/
+├── engine/
+└── ui/
+
+tests/
+├── test_analyzer.py
+├── test_app.py
+├── test_board.py
+├── test_constraint_subtractor.py
+├── test_coord.py
+├── test_domain_contracts.py
+├── test_game_config.py
+├── test_game_engine.py
+├── test_main.py
+├── test_pattern_detector.py
+├── test_probability_solver.py
+├── test_random_explorer.py
+├── test_renderer.py
+├── test_stats.py
+└── test_transitive_matcher.py
+```
+
+## Verification
+
+Run the automated tests with:
+
+```bash
+python3 -m pytest -q -s
+```
+
+If you have `mypy` installed, you can also run:
+
+```bash
+python3 -m mypy --strict minesweeper
+```
+
+## Notes
+
+- The active package is `minesweeper`, not the legacy uppercase `Minesweeper`
+- The rewrite is intended to be runnable directly from the repo with `python -m minesweeper`
+- The planning docs under `docs/plans/` are local working artifacts and may be git-ignored in this checkout
