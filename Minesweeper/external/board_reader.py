@@ -6,6 +6,7 @@ from minesweeper.domain.tile import Tile
 from minesweeper.domain.types import Coord
 from minesweeper.external.capture import ScreenCapture, ScreenRegion, TileSize
 from minesweeper.external.classifier import TileClassifier
+from minesweeper.external.grid import TileGrid
 
 
 class _TilePixelGrid:
@@ -14,12 +15,13 @@ class _TilePixelGrid:
         pixels: Any,
         origin_x: int,
         origin_y: int,
-        tile_size: TileSize,
+        width: int,
+        height: int,
     ) -> None:
         self._pixels = pixels
         self._origin_x = origin_x
         self._origin_y = origin_y
-        self.size = (tile_size.width, tile_size.height)
+        self.size = (width, height)
 
     def getpixel(self, position: tuple[int, int]) -> Any:
         x, y = position
@@ -36,6 +38,7 @@ class ScreenBoardReader:
         width: int,
         height: int,
         num_mines: int,
+        grid: TileGrid | None = None,
     ) -> None:
         self._capture = capture
         self._classifier = classifier
@@ -44,6 +47,7 @@ class ScreenBoardReader:
         self._width = width
         self._height = height
         self._num_mines = num_mines
+        self._grid = grid
         self._tiles: dict[Coord, Tile] | None = None
 
     @property
@@ -64,12 +68,7 @@ class ScreenBoardReader:
         for x in range(self._width):
             for y in range(self._height):
                 coord = Coord(x, y)
-                tile_pixels = _TilePixelGrid(
-                    pixels=board_pixels,
-                    origin_x=x * self._tile_size.width,
-                    origin_y=y * self._tile_size.height,
-                    tile_size=self._tile_size,
-                )
+                tile_pixels = self._tile_pixels(board_pixels, coord)
                 tiles[coord] = self._classifier.classify(tile_pixels, coord)
 
         self._tiles = tiles
@@ -82,3 +81,21 @@ class ScreenBoardReader:
             raise KeyError(coord)
 
         return self._tiles[coord]
+
+    def _tile_pixels(self, board_pixels: Any, coord: Coord) -> _TilePixelGrid:
+        if self._grid is not None:
+            rect = self._grid.tile_rect(coord)
+            return _TilePixelGrid(
+                pixels=board_pixels,
+                origin_x=rect.left - self._board_region.left,
+                origin_y=rect.top - self._board_region.top,
+                width=rect.width,
+                height=rect.height,
+            )
+        return _TilePixelGrid(
+            pixels=board_pixels,
+            origin_x=coord.x * self._tile_size.width,
+            origin_y=coord.y * self._tile_size.height,
+            width=self._tile_size.width,
+            height=self._tile_size.height,
+        )

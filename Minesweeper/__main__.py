@@ -34,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=defaults.font_size_px,
         help="UI font size in pixels",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print external runtime progress and stop reasons",
+    )
     return parser
 
 
@@ -59,7 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         capture = ScreenCapture()
         calibration = CalibrationWizard(capture).run()
-        ExternalApp(calibration).run()
+        ExternalApp(calibration, output=print if args.verbose else None).run()
         return 0
 
     try:

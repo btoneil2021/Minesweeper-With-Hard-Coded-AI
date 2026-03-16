@@ -7,6 +7,7 @@ from minesweeper.external.app import ExternalApp
 from minesweeper.external.calibration import CalibrationResult
 from minesweeper.external.capture import ScreenRegion, TileSize
 from minesweeper.external.classifier import ColorProfiles
+from minesweeper.external.grid import TileGrid
 
 
 class FakeBoardReader:
@@ -80,6 +81,12 @@ def calibration() -> CalibrationResult:
             flagged_bg=None,
             number_colors={},
             mine_bg=None,
+        ),
+        grid=TileGrid(
+            origin_left=0,
+            origin_top=0,
+            col_boundaries=(0, 10),
+            row_boundaries=(0, 10),
         ),
     )
 
@@ -155,3 +162,138 @@ def test_external_app_stops_when_board_looks_complete() -> None:
     assert analyzer.calls == 0
     assert strategy.calls == 0
     assert executor.batches == []
+
+
+def test_external_app_logs_no_moves_stop_when_output_is_enabled() -> None:
+    hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
+    board_reader = FakeBoardReader([hidden])
+    messages: list[str] = []
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Empty", [])],
+        output=lambda message: messages.append(message),
+    )
+
+    app.run()
+
+    assert messages == [
+        "External: refreshing board snapshot",
+        "External: no moves available; stopping",
+    ]
+
+
+def test_external_app_logs_unchanged_board_retry_and_stop() -> None:
+    hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
+    board_reader = FakeBoardReader([hidden, hidden, hidden])
+    reveal_move = Move(ActionType.REVEAL, Coord(0, 0))
+    messages: list[str] = []
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Reveal", [reveal_move])],
+        sleep=lambda _seconds: None,
+        output=lambda message: messages.append(message),
+    )
+
+    app.run()
+
+    assert messages == [
+        "External: refreshing board snapshot",
+        "External: using Reveal with 1 move",
+        "External: board unchanged after move; retrying once",
+        "External: refreshing board snapshot",
+        "External: using Reveal with 1 move",
+        "External: board unchanged after retry; stopping",
+    ]
+
+
+def test_external_app_logs_terminal_stop() -> None:
+    complete = {Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 0)}
+    board_reader = FakeBoardReader([complete])
+    messages: list[str] = []
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Unused", [])],
+        output=lambda message: messages.append(message),
+    )
+
+    app.run()
+
+    assert messages == [
+        "External: refreshing board snapshot",
+        "External: board looks terminal; stopping",
+    ]
+
+
+def test_external_app_logs_strategy_name_and_move_count() -> None:
+    hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
+    revealed = {Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 0)}
+    board_reader = FakeBoardReader([hidden, revealed])
+    messages: list[str] = []
+    reveal_move = Move(ActionType.REVEAL, Coord(0, 0))
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Reveal", [reveal_move])],
+        sleep=lambda _seconds: None,
+        output=lambda message: messages.append(message),
+    )
+
+    app.run()
+
+    assert "External: using Reveal with 1 move" in messages
+
+
+def test_external_app_passes_calibration_grid_to_default_runtime_components(monkeypatch) -> None:
+    board_reader_kwargs: dict[str, object] = {}
+    executor_kwargs: dict[str, object] = {}
+    calibration_result = calibration()
+
+    class RecordingBoardReader:
+        def __init__(self, **kwargs: object) -> None:
+            board_reader_kwargs.update(kwargs)
+
+        width = 1
+        height = 1
+        num_mines = 0
+
+        def refresh(self) -> None:
+            return None
+
+        def tile_at(self, coord: Coord) -> Tile:
+            return Tile(coord=coord, state=TileState.REVEALED, is_mine=False, adjacent_mines=0)
+
+    class RecordingMoveExecutor:
+        def __init__(self, **kwargs: object) -> None:
+            executor_kwargs.update(kwargs)
+
+        def execute_batch(self, moves: Sequence[Move]) -> None:
+            return None
+
+    monkeypatch.setattr("minesweeper.external.app.ScreenBoardReader", RecordingBoardReader)
+    monkeypatch.setattr("minesweeper.external.app.ScreenMoveExecutor", RecordingMoveExecutor)
+
+    ExternalApp(
+        calibration_result,
+        capture=object(),
+        classifier=object(),
+        analyzer=FakeAnalyzer(),
+        strategies=[],
+    )
+
+    assert board_reader_kwargs["grid"] == calibration_result.grid
+    assert executor_kwargs["grid"] == calibration_result.grid

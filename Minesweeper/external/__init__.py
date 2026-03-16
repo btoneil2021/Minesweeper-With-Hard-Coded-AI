@@ -6,6 +6,7 @@ from minesweeper.external.calibration import CalibrationResult, CalibrationWizar
 from minesweeper.external.classifier import ColorProfiles, TileClassifier
 from minesweeper.external.board_reader import ScreenBoardReader
 from minesweeper.external.executor import ScreenMoveExecutor
+from minesweeper.external.grid import TileGrid
 
 __all__ = [
     "CaptureError",
@@ -15,8 +16,9 @@ __all__ = [
     "ExternalApp",
     "ScreenCapture",
     "ScreenRegion",
-    "TileSize",
-    "TileClassifier",
     "ScreenBoardReader",
     "ScreenMoveExecutor",
+    "TileGrid",
+    "TileSize",
+    "TileClassifier",
 ]

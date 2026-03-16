@@ -2,6 +2,7 @@ from minesweeper.domain.move import Move
 from minesweeper.domain.types import ActionType, Coord
 from minesweeper.external.capture import ScreenRegion, TileSize
 from minesweeper.external.executor import ScreenMoveExecutor
+from minesweeper.external.grid import TileGrid
 
 
 def test_execute_targets_tile_center_for_reveal() -> None:
@@ -47,6 +48,27 @@ def test_execute_batch_orders_flags_before_reveals() -> None:
         ("left", 15, 15),
     ]
     assert delays == [0.04, 0.04]
+
+
+def test_execute_uses_empirical_grid_click_target_with_inset() -> None:
+    clicks: list[tuple[str, int, int]] = []
+    executor = ScreenMoveExecutor(
+        board_region=ScreenRegion(100, 200, 94, 61),
+        tile_size=TileSize(31, 30),
+        grid=TileGrid(
+            origin_left=100,
+            origin_top=200,
+            col_boundaries=(0, 31, 63, 94),
+            row_boundaries=(0, 30, 61),
+        ),
+        click_inset=4,
+        left_click=lambda x, y: clicks.append(("left", x, y)),
+        right_click=lambda x, y: clicks.append(("right", x, y)),
+    )
+
+    executor.execute(Move(ActionType.REVEAL, Coord(2, 1)))
+
+    assert clicks == [("left", 178, 245)]
 
 
 def test_execute_skips_positions_outside_board_region() -> None:

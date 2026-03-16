@@ -32,10 +32,12 @@ class ExternalApp:
         analyzer: Analyzer | None = None,
         strategies: Sequence[AIStrategy] | None = None,
         sleep: Callable[[float], None] | None = None,
+        output: Callable[[str], None] | None = None,
     ) -> None:
         self._calibration = calibration
         self._settle_delay_seconds = settle_delay_ms / 1000
         self._sleep = sleep or time.sleep
+        self._output = output or (lambda _message: None)
 
         runtime_capture = capture or ScreenCapture()
         runtime_classifier = classifier or TileClassifier(calibration.profiles)
@@ -47,10 +49,12 @@ class ExternalApp:
             width=calibration.width,
             height=calibration.height,
             num_mines=calibration.num_mines,
+            grid=calibration.grid,
         )
         self._executor = executor or ScreenMoveExecutor(
             board_region=calibration.board_region,
             tile_size=calibration.tile_size,
+            grid=calibration.grid,
         )
         self._analyzer = analyzer or Analyzer()
         self._rng = random.Random()
@@ -65,13 +69,16 @@ class ExternalApp:
     def run(self) -> None:
         unchanged_after_move = 0
         while True:
+            self._output("External: refreshing board snapshot")
             self._board_reader.refresh()
             if self._board_looks_terminal():
+                self._output("External: board looks terminal; stopping")
                 return
 
             analysis = self._analyzer.analyze(self._board_reader)
             moves = self._next_moves(analysis)
             if not moves:
+                self._output("External: no moves available; stopping")
                 return
 
             before = self._board_signature()
@@ -80,13 +87,16 @@ class ExternalApp:
 
             self._board_reader.refresh()
             if self._board_looks_terminal():
+                self._output("External: board looks terminal; stopping")
                 return
 
             after = self._board_signature()
             if after == before:
                 unchanged_after_move += 1
                 if unchanged_after_move >= 2:
+                    self._output("External: board unchanged after retry; stopping")
                     return
+                self._output("External: board unchanged after move; retrying once")
                 self._sleep(self._settle_delay_seconds * 2)
                 continue
 
@@ -99,6 +109,9 @@ class ExternalApp:
 
             moves = strategy.find_moves(analysis)
             if moves:
+                move_count = len(moves)
+                noun = "move" if move_count == 1 else "moves"
+                self._output(f"External: using {strategy.name} with {move_count} {noun}")
                 return moves
 
         return []

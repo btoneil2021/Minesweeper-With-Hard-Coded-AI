@@ -4,6 +4,7 @@ from minesweeper.domain.tile import Tile
 from minesweeper.domain.types import Coord, TileState
 from minesweeper.external.board_reader import ScreenBoardReader
 from minesweeper.external.capture import ScreenRegion, TileSize
+from minesweeper.external.grid import TileGrid
 
 
 class DummyBoardPixels:
@@ -60,6 +61,36 @@ def test_refresh_classifies_every_tile_once_per_snapshot() -> None:
         Coord(0, 1): ((4, 4), (0, 4, 0)),
         Coord(1, 0): ((4, 4), (4, 0, 0)),
         Coord(1, 1): ((4, 4), (4, 4, 0)),
+    }
+
+
+def test_refresh_uses_per_tile_rects_from_empirical_grid() -> None:
+    capture = FakeCapture(DummyBoardPixels(63, 61))
+    classifier = RecordingClassifier()
+    reader = ScreenBoardReader(
+        capture=capture,
+        classifier=classifier,
+        board_region=ScreenRegion(10, 20, 63, 61),
+        tile_size=TileSize(31, 30),
+        width=2,
+        height=2,
+        num_mines=3,
+        grid=TileGrid(
+            origin_left=10,
+            origin_top=20,
+            col_boundaries=(0, 31, 63),
+            row_boundaries=(0, 30, 61),
+        ),
+    )
+
+    reader.refresh()
+
+    recorded = {coord: (size, origin) for coord, size, origin in classifier.calls}
+    assert recorded == {
+        Coord(0, 0): ((31, 30), (0, 0, 0)),
+        Coord(0, 1): ((31, 31), (0, 30, 0)),
+        Coord(1, 0): ((32, 30), (31, 0, 0)),
+        Coord(1, 1): ((32, 31), (31, 30, 0)),
     }
 
 

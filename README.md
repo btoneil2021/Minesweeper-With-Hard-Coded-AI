@@ -127,6 +127,8 @@ python -m minesweeper --mode hybrid --width 40 --height 40 --mines 300 --tile-si
 6. feeds that snapshot into the existing analyzer and AI strategies
 7. executes the chosen moves through mouse clicks
 
+Use `--verbose` with external mode if you want runtime progress and explicit stop reasons printed to the terminal.
+
 The current calibration flow gathers:
 
 - the top-left and bottom-right corners of the whole board
@@ -137,11 +139,15 @@ During calibration, the wizard now:
 
 - asks you to hold `Shift` and left-click each requested board or tile corner
 - falls back to manual `(x,y)` entry if guarded live capture is unavailable, cancelled, or times out
-- captures the fully hidden board
+- tolerates small board-geometry drift and may snap inferred tile counts with a warning
+- captures a rough hidden-board screenshot from the clicked board region
+- detects the board's actual row and column boundaries from that hidden screenshot
+- realigns the runtime board region to the detected tile grid instead of trusting the clicked corners exactly
 - clicks the center tile once
 - waits for the board to settle
 - captures the board again
 - derives initial hidden, revealed, and observed number colors from those screenshots
+- reuses the same detected tile grid for both screen cropping and click targeting during the solve loop
 
 Important notes:
 
@@ -149,8 +155,12 @@ Important notes:
 - the implementation is test-first and additive, so the architecture is in place even though live desktop behavior will still benefit from manual tuning
 - the launcher path for external mode lazy-loads the external automation modules, but the project still depends on `pygame` overall because the local game client ships in the same package
 - calibration still runs from terminal prompts rather than a dedicated GUI wizard, but point selection now prefers guarded live clicks
+- the clicked board and tile corners are now treated as coarse calibration hints; the hidden-board scan is the source of truth for runtime tile boundaries
+- clearly incorrect calibration bounds still fail and should be recalibrated
 - calibration now performs an automatic first reveal, so the target board should be in a fresh hidden state when you start
+- runtime clicks now target the detected tile rectangles with a small inset instead of naive uniform-tile midpoints
 - if screen capture or mouse-control dependencies are missing, live external mode will fail at runtime with a clear error
+- external runtime progress and stop reasons stay quiet unless you pass `--verbose`
 
 ## Controls
 

@@ -7,6 +7,7 @@ from typing import Any
 from minesweeper.domain.move import Move
 from minesweeper.domain.types import ActionType
 from minesweeper.external.capture import ScreenRegion, TileSize
+from minesweeper.external.grid import TileGrid
 
 
 def _load_pyautogui() -> Any | None:
@@ -21,6 +22,8 @@ class ScreenMoveExecutor:
         self,
         board_region: ScreenRegion,
         tile_size: TileSize,
+        grid: TileGrid | None = None,
+        click_inset: int = 4,
         click_delay_ms: int = 40,
         left_click: Callable[[int, int], None] | None = None,
         right_click: Callable[[int, int], None] | None = None,
@@ -29,6 +32,8 @@ class ScreenMoveExecutor:
     ) -> None:
         self._board_region = board_region
         self._tile_size = tile_size
+        self._grid = grid
+        self._click_inset = click_inset
         self._click_delay_seconds = click_delay_ms / 1000
         self._pyautogui_loader = pyautogui_loader or _load_pyautogui
         self._left_click = left_click
@@ -59,8 +64,11 @@ class ScreenMoveExecutor:
                 self._resolve_delay()(self._click_delay_seconds)
 
     def _screen_point(self, move: Move) -> tuple[int, int] | None:
-        x = self._board_region.left + move.coord.x * self._tile_size.width + self._tile_size.width // 2
-        y = self._board_region.top + move.coord.y * self._tile_size.height + self._tile_size.height // 2
+        if self._grid is not None:
+            x, y = self._grid.click_target(move.coord, inset=self._click_inset)
+        else:
+            x = self._board_region.left + move.coord.x * self._tile_size.width + self._tile_size.width // 2
+            y = self._board_region.top + move.coord.y * self._tile_size.height + self._tile_size.height // 2
         if not self._contains_point(x, y):
             return None
         return x, y

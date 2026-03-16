@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import colorsys
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from minesweeper.external.classifier import (
     sample_background,
     sample_center,
 )
+from minesweeper.external.grid import TileGrid, detect_tile_grid
 
 
 class CalibrationResult(NamedTuple):
@@ -25,6 +27,7 @@ class CalibrationResult(NamedTuple):
     height: int
     num_mines: int
     profiles: ColorProfiles
+    grid: TileGrid | None = None
 
 
 class _PointCaptureUnavailable(RuntimeError):
@@ -38,6 +41,10 @@ class _PointCaptureCancelled(RuntimeError):
 class _PynputModules(NamedTuple):
     keyboard: Any
     mouse: Any
+
+
+QUIET_ALIGNMENT_TOLERANCE = 0.15
+SNAP_ALIGNMENT_TOLERANCE = 0.45
 
 
 class _GuardedClickCollector:
@@ -81,36 +88,67 @@ class _TilePixelGrid:
     def __init__(
         self,
         pixels: Any,
-        coord: Coord,
-        tile_size: TileSize,
+        origin_x: int,
+        origin_y: int,
+        width: int,
+        height: int,
     ) -> None:
         self._pixels = pixels
-        self._origin_x = coord.x * tile_size.width
-        self._origin_y = coord.y * tile_size.height
-        self.size = (tile_size.width, tile_size.height)
+        self._origin_x = origin_x
+        self._origin_y = origin_y
+        self.size = (width, height)
 
     def getpixel(self, position: tuple[int, int]) -> Any:
         x, y = position
         return self._pixels.getpixel((self._origin_x + x, self._origin_y + y))
 
 
-def _tile_pixels(pixels: Any, coord: Coord, tile_size: TileSize) -> _TilePixelGrid:
-    return _TilePixelGrid(pixels=pixels, coord=coord, tile_size=tile_size)
+def _tile_pixels(
+    pixels: Any,
+    coord: Coord,
+    tile_size: TileSize | None = None,
+    grid: TileGrid | None = None,
+) -> _TilePixelGrid:
+    if grid is not None:
+        rect = grid.tile_rect(coord)
+        return _TilePixelGrid(
+            pixels=pixels,
+            origin_x=rect.left - grid.origin_left,
+            origin_y=rect.top - grid.origin_top,
+            width=rect.width,
+            height=rect.height,
+        )
+    if tile_size is None:
+        raise ValueError("tile_size is required when grid is not provided")
+    return _TilePixelGrid(
+        pixels=pixels,
+        origin_x=coord.x * tile_size.width,
+        origin_y=coord.y * tile_size.height,
+        width=tile_size.width,
+        height=tile_size.height,
+    )
 
 
 def _changed_tiles(
     before_pixels: Any,
     after_pixels: Any,
-    width: int,
-    height: int,
-    tile_size: TileSize,
+    width: int | None = None,
+    height: int | None = None,
+    tile_size: TileSize | None = None,
+    grid: TileGrid | None = None,
 ) -> list[Coord]:
+    if grid is not None:
+        width = grid.width
+        height = grid.height
+    if width is None or height is None:
+        raise ValueError("width and height are required when grid is not provided")
+
     changed: list[Coord] = []
     for x in range(width):
         for y in range(height):
             coord = Coord(x, y)
-            before_tile = _tile_pixels(before_pixels, coord, tile_size)
-            after_tile = _tile_pixels(after_pixels, coord, tile_size)
+            before_tile = _tile_pixels(before_pixels, coord, tile_size=tile_size, grid=grid)
+            after_tile = _tile_pixels(after_pixels, coord, tile_size=tile_size, grid=grid)
             if _tile_signature(before_tile) != _tile_signature(after_tile):
                 changed.append(coord)
     return changed
@@ -128,12 +166,19 @@ def _tile_signature(tile_pixels: _TilePixelGrid) -> tuple[Any, ...]:
 def _build_live_profiles(
     before_pixels: Any,
     after_pixels: Any,
-    width: int,
-    height: int,
-    tile_size: TileSize,
+    width: int | None = None,
+    height: int | None = None,
+    tile_size: TileSize | None = None,
+    grid: TileGrid | None = None,
 ) -> ColorProfiles:
+    if grid is not None:
+        width = grid.width
+        height = grid.height
+    if width is None or height is None:
+        raise ValueError("width and height are required when grid is not provided")
+
     hidden_samples = [
-        sample_background(_tile_pixels(before_pixels, Coord(x, y), tile_size))
+        sample_background(_tile_pixels(before_pixels, Coord(x, y), tile_size=tile_size, grid=grid))
         for x in range(width)
         for y in range(height)
     ]
@@ -145,6 +190,7 @@ def _build_live_profiles(
         width=width,
         height=height,
         tile_size=tile_size,
+        grid=grid,
     )
     if not changed_coords:
         raise ValueError("No changed tiles detected after first reveal")
@@ -152,7 +198,7 @@ def _build_live_profiles(
     revealed_samples: list[tuple[int, int, int]] = []
     number_colors: dict[int, tuple[int, int, int]] = {}
     for coord in changed_coords:
-        tile = _tile_pixels(after_pixels, coord, tile_size)
+        tile = _tile_pixels(after_pixels, coord, tile_size=tile_size, grid=grid)
         background = sample_background(tile)
         center = sample_center(tile)
         revealed_samples.append(background)
@@ -272,6 +318,7 @@ def _default_profile_builder(
     width: int,
     height: int,
     _tile_size: TileSize,
+    grid: TileGrid,
 ) -> ColorProfiles:
     return _build_live_profiles(
         before_pixels=before_pixels,
@@ -279,6 +326,7 @@ def _default_profile_builder(
         width=width,
         height=height,
         tile_size=_tile_size,
+        grid=grid,
     )
 
 
@@ -287,6 +335,60 @@ def _default_click(x: int, y: int) -> None:
     if pyautogui is None:
         raise RuntimeError("pyautogui is required for live calibration clicks")
     pyautogui.click(x, y)
+
+
+def _derive_dimension(
+    axis_name: str,
+    total_pixels: int,
+    tile_pixels: int,
+    warn: Callable[[str], None],
+) -> int:
+    if tile_pixels <= 0:
+        raise ValueError("tile alignment requires positive tile dimensions")
+
+    ratio = total_pixels / tile_pixels
+    rounded = math.floor(ratio + 0.5)
+    drift = abs(ratio - rounded)
+
+    if drift <= QUIET_ALIGNMENT_TOLERANCE:
+        return rounded
+    if drift <= SNAP_ALIGNMENT_TOLERANCE:
+        warn(f"{axis_name} looked slightly off ({ratio:.2f}); snapping to {rounded} tiles.")
+        return rounded
+    raise ValueError("tile alignment appears inaccurate")
+
+
+def _normalize_grid(grid: TileGrid) -> tuple[TileGrid, ScreenRegion]:
+    left_offset = grid.col_boundaries[0]
+    top_offset = grid.row_boundaries[0]
+    normalized = TileGrid(
+        origin_left=grid.origin_left + left_offset,
+        origin_top=grid.origin_top + top_offset,
+        col_boundaries=tuple(boundary - left_offset for boundary in grid.col_boundaries),
+        row_boundaries=tuple(boundary - top_offset for boundary in grid.row_boundaries),
+    )
+    board_region = ScreenRegion(
+        left=normalized.origin_left,
+        top=normalized.origin_top,
+        width=normalized.col_boundaries[-1],
+        height=normalized.row_boundaries[-1],
+    )
+    return normalized, board_region
+
+
+def _grid_tile_size(grid: TileGrid) -> TileSize:
+    widths = sorted(
+        grid.col_boundaries[index + 1] - grid.col_boundaries[index]
+        for index in range(grid.width)
+    )
+    heights = sorted(
+        grid.row_boundaries[index + 1] - grid.row_boundaries[index]
+        for index in range(grid.height)
+    )
+    return TileSize(
+        width=widths[len(widths) // 2],
+        height=heights[len(heights) // 2],
+    )
 
 
 def _load_pyautogui() -> Any | None:
@@ -316,7 +418,8 @@ class CalibrationWizard:
         click: Callable[[int, int], None] | None = None,
         sleep: Callable[[float], None] | None = None,
         settle_delay_ms: int = 750,
-        profile_builder: Callable[[Any, Any, int, int, TileSize], ColorProfiles] | None = None,
+        profile_builder: Callable[[Any, Any, int, int, TileSize, TileGrid], ColorProfiles] | None = None,
+        grid_detector: Callable[[Any, ScreenRegion], TileGrid] | None = None,
         output: Callable[[str], None] | None = None,
     ) -> None:
         self._capture = capture
@@ -341,6 +444,14 @@ class CalibrationWizard:
         self._sleep = sleep or time.sleep
         self._settle_delay_seconds = settle_delay_ms / 1000
         self._profile_builder = profile_builder or _default_profile_builder
+        self._grid_detector = grid_detector or (
+            lambda pixels, region: detect_tile_grid(
+                pixels,
+                board_left=region.left,
+                board_top=region.top,
+                output=self._output,
+            )
+        )
 
     def run(self) -> CalibrationResult:
         board_top_left = self._capture_point("Click the top-left corner of the top-left tile")
@@ -363,15 +474,20 @@ class CalibrationWizard:
             height=tile_bottom_right[1] - tile_top_left[1],
         )
 
-        width = self._derive_dimension(board_region.width, tile_size.width)
-        height = self._derive_dimension(board_region.height, tile_size.height)
+        self._derive_dimension("Board width", board_region.width, tile_size.width)
+        self._derive_dimension("Board height", board_region.height, tile_size.height)
+        rough_before_pixels = self._capture.grab(board_region)
+        grid, board_region = _normalize_grid(self._grid_detector(rough_before_pixels, board_region))
+        width = grid.width
+        height = grid.height
+        tile_size = _grid_tile_size(grid)
         num_mines = self._read_int("How many mines are on this board")
         before_pixels = self._capture.grab(board_region)
-        click_x, click_y = self._center_click_point(board_region, tile_size, width, height)
+        click_x, click_y = self._center_click_point(board_region, tile_size, width, height, grid)
         self._click(click_x, click_y)
         self._sleep(self._settle_delay_seconds)
         after_pixels = self._capture.grab(board_region)
-        profiles = self._profile_builder(before_pixels, after_pixels, width, height, tile_size)
+        profiles = self._profile_builder(before_pixels, after_pixels, width, height, tile_size, grid)
 
         return CalibrationResult(
             board_region=board_region,
@@ -380,18 +496,16 @@ class CalibrationWizard:
             height=height,
             num_mines=num_mines,
             profiles=profiles,
+            grid=grid,
         )
 
-    def _derive_dimension(self, total_pixels: int, tile_pixels: int) -> int:
-        if tile_pixels <= 0:
-            raise ValueError("tile alignment requires positive tile dimensions")
-
-        ratio = total_pixels / tile_pixels
-        rounded = round(ratio)
-        if abs(ratio - rounded) > 0.15:
-            raise ValueError("tile alignment appears inaccurate")
-
-        return rounded
+    def _derive_dimension(self, axis_name: str, total_pixels: int, tile_pixels: int) -> int:
+        return _derive_dimension(
+            axis_name=axis_name,
+            total_pixels=total_pixels,
+            tile_pixels=tile_pixels,
+            warn=self._output,
+        )
 
     def _center_click_point(
         self,
@@ -399,8 +513,11 @@ class CalibrationWizard:
         tile_size: TileSize,
         width: int,
         height: int,
+        grid: TileGrid | None = None,
     ) -> tuple[int, int]:
         center_coord = Coord(width // 2, height // 2)
+        if grid is not None:
+            return grid.click_target(center_coord)
         return (
             board_region.left + center_coord.x * tile_size.width + tile_size.width // 2,
             board_region.top + center_coord.y * tile_size.height + tile_size.height // 2,
