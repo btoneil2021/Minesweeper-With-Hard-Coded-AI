@@ -13,7 +13,7 @@ from minesweeper.ai.strategies.probability_solver import ProbabilitySolver
 from minesweeper.ai.strategies.random_explorer import RandomExplorer
 from minesweeper.ai.strategies.transitive_matcher import TransitiveMatcher
 from minesweeper.domain.move import Move
-from minesweeper.domain.types import Coord, TileState
+from minesweeper.domain.types import ActionType, Coord, TileState
 from minesweeper.external.board_reader import ScreenBoardReader
 from minesweeper.external.calibration import CalibrationResult
 from minesweeper.external.capture import ScreenCapture
@@ -67,8 +67,11 @@ class ExternalApp:
             tile_size=calibration.tile_size,
             grid=calibration.grid,
             click_delay_ms=click_delay_ms,
+            before_click=self._record_move_overlay,
         )
         self._analyzer = analyzer or Analyzer()
+        self._batch_index = 0
+        self._move_index = 0
         self._rng = random.Random()
         self._strategies = list(strategies) if strategies is not None else [
             RandomExplorer(self._rng),
@@ -95,7 +98,16 @@ class ExternalApp:
 
             before = self._board_signature()
             try:
+                move_count = len(moves)
+                noun = "move" if move_count == 1 else "moves"
+                self._output(
+                    f"External: executing batch {self._batch_index} with {move_count} {noun} before next refresh"
+                )
                 self._executor.execute_batch(moves)
+                remember_moves = getattr(self._board_reader, "remember_moves", None)
+                if callable(remember_moves):
+                    remember_moves(moves)
+                self._batch_index += 1
             except ExecutionError as exc:
                 if str(exc) == STOP_REASONS.unsupported_move_type:
                     return STOP_REASONS.unsupported_move_type
@@ -153,6 +165,8 @@ class ExternalApp:
                 continue
 
             moves = strategy.find_moves(analysis)
+            moves = self._validated_moves(moves)
+            moves = self._conservative_live_batch(moves)
             if moves:
                 move_count = len(moves)
                 noun = "move" if move_count == 1 else "moves"
@@ -160,6 +174,32 @@ class ExternalApp:
                 return moves
 
         return []
+
+    def _validated_moves(self, moves: Sequence[Move]) -> list[Move]:
+        if not moves:
+            return []
+
+        actions_by_coord: dict[Coord, ActionType] = {}
+        is_externally_resolved = getattr(self._board_reader, "is_externally_resolved", None)
+        for move in moves:
+            tile = self._board_reader.tile_at(move.coord)
+            if tile.state != TileState.HIDDEN:
+                return []
+            if callable(is_externally_resolved) and is_externally_resolved(move.coord):
+                return []
+            previous_action = actions_by_coord.get(move.coord)
+            if previous_action is not None and previous_action != move.action:
+                return []
+            actions_by_coord[move.coord] = move.action
+
+        return list(moves)
+
+    def _conservative_live_batch(self, moves: Sequence[Move]) -> list[Move]:
+        if not moves:
+            return []
+        if any(move.action == ActionType.FLAG for move in moves):
+            return [moves[0]]
+        return list(moves)
 
     def _has_revealed_zero(self) -> bool:
         for x in range(self._board_reader.width):
@@ -197,3 +237,26 @@ class ExternalApp:
                     (tile.coord.x, tile.coord.y, tile.state.name, tile.adjacent_mines, tile.is_mine)
                 )
         return tuple(signature)
+
+    def _record_move_overlay(
+        self,
+        move: Move,
+        x: int,
+        y: int,
+        move_index_in_batch: int,
+        batch_size: int,
+    ) -> None:
+        self._output(
+            f"External: batch {self._batch_index} move {move_index_in_batch + 1}/{batch_size} "
+            f"{move.action.name.lower()} {move.coord} at screen ({x}, {y})"
+        )
+        self._board_reader.save_move_overlay(
+            coord=move.coord,
+            click_point=(x, y),
+            label=f"{move.action.name} ({move.coord.x},{move.coord.y})",
+            batch_index=self._batch_index,
+            move_index=self._move_index,
+            move_index_in_batch=move_index_in_batch,
+            batch_size=batch_size,
+        )
+        self._move_index += 1

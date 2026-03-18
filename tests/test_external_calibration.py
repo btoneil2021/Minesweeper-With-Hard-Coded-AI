@@ -5,6 +5,7 @@ import pytest
 from minesweeper.external.calibration import (
     CalibrationResult,
     CalibrationWizard,
+    ROUGH_CALIBRATION_MARGIN_PX,
     _GuardedClickCollector,
     _PointCaptureCancelled,
     _PointCaptureUnavailable,
@@ -213,6 +214,7 @@ def test_wizard_returns_detected_tile_grid_from_hidden_snapshot() -> None:
         read_int=lambda _prompt: 99,
         click=lambda _x, _y: None,
         sleep=lambda _seconds: None,
+        rough_calibration_margin_px=0,
         profile_builder=lambda *_args: profiles,
         output=lambda _message: None,
     ).run()
@@ -226,6 +228,88 @@ def test_wizard_returns_detected_tile_grid_from_hidden_snapshot() -> None:
     assert result.board_region == ScreenRegion(13, 22, 94, 61)
     assert result.width == 3
     assert result.height == 2
+
+
+def test_wizard_rebuilds_regular_grid_when_detected_lattice_is_implausibly_small_for_clicked_region() -> None:
+    points = iter([(10, 20), (790, 436)])
+    profiles = ColorProfiles(
+        hidden_bg=(20, 20, 20),
+        revealed_bg=(220, 220, 220),
+        flagged_bg=None,
+        number_colors={},
+        mine_bg=None,
+    )
+
+    result = CalibrationWizard(
+        capture=FakeCapture(
+            [
+                FakePixelGrid([[(20, 20, 20)] * 972 for _ in range(608)]),
+                FakePixelGrid([[(20, 20, 20)] * 780 for _ in range(416)]),
+                FakePixelGrid([[(220, 220, 220)] * 780 for _ in range(416)]),
+            ]
+        ),
+        capture_point=lambda _prompt: next(points),
+        read_int=lambda _prompt: 99,
+        click=lambda _x, _y: None,
+        sleep=lambda _seconds: None,
+        profile_builder=lambda *_args: profiles,
+        grid_detector=_fixed_grid_detector(
+            col_boundaries=(96, 122, 148, 174),
+            row_boundaries=(80, 106, 132, 158),
+        ),
+        output=lambda _message: None,
+    ).run()
+
+    assert result.board_region == ScreenRegion(10, 20, 780, 416)
+    assert result.width == 30
+    assert result.height == 16
+    assert result.grid == TileGrid(
+        origin_left=10,
+        origin_top=20,
+        col_boundaries=tuple(range(0, 26 * 30, 26)) + (780,),
+        row_boundaries=tuple(range(0, 26 * 16, 26)) + (416,),
+    )
+
+
+def test_wizard_uses_standard_expert_dimensions_when_detector_collapses_for_99_mines() -> None:
+    points = iter([(10, 20), (895, 498)])
+    profiles = ColorProfiles(
+        hidden_bg=(20, 20, 20),
+        revealed_bg=(220, 220, 220),
+        flagged_bg=None,
+        number_colors={},
+        mine_bg=None,
+    )
+
+    result = CalibrationWizard(
+        capture=FakeCapture(
+            [
+                FakePixelGrid([[(20, 20, 20)] * 1077 for _ in range(670)]),
+                FakePixelGrid([[(20, 20, 20)] * 885 for _ in range(478)]),
+                FakePixelGrid([[(220, 220, 220)] * 885 for _ in range(478)]),
+            ]
+        ),
+        capture_point=lambda _prompt: next(points),
+        read_int=lambda _prompt: 99,
+        click=lambda _x, _y: None,
+        sleep=lambda _seconds: None,
+        profile_builder=lambda *_args: profiles,
+        grid_detector=_fixed_grid_detector(
+            col_boundaries=(96, 122, 148, 174),
+            row_boundaries=(80, 106, 132, 158),
+        ),
+        output=lambda _message: None,
+    ).run()
+
+    assert result.board_region == ScreenRegion(10, 20, 885, 478)
+    assert result.width == 30
+    assert result.height == 16
+    assert result.grid == TileGrid(
+        origin_left=10,
+        origin_top=20,
+        col_boundaries=tuple(round(index * 885 / 30) for index in range(31)),
+        row_boundaries=tuple(round(index * 478 / 16) for index in range(17)),
+    )
 
 
 def test_default_point_capture_falls_back_to_manual_when_live_picker_missing() -> None:
@@ -363,6 +447,7 @@ def test_wizard_derives_board_dimensions_from_detected_grid() -> None:
             col_boundaries=(0, 10, 20, 30, 40),
             row_boundaries=(0, 10, 20, 30, 40),
         ),
+        rough_calibration_margin_px=0,
         profile_builder=lambda before, after, width, height, tile_size, grid: profile_calls.append((width, height, tile_size)) or profiles,
     )
 
@@ -432,6 +517,7 @@ def test_wizard_warns_when_board_dimensions_are_snapped() -> None:
             col_boundaries=tuple(range(0, 301, 10)),
             row_boundaries=tuple(range(0, 291, 10)),
         ),
+        rough_calibration_margin_px=0,
         profile_builder=lambda *_args: ColorProfiles(
             hidden_bg=(20, 20, 20),
             revealed_bg=(220, 220, 220),
@@ -453,6 +539,12 @@ def test_wizard_warns_when_board_dimensions_are_snapped() -> None:
 def test_wizard_aligns_board_region_to_snapped_tile_grid_before_capture() -> None:
     points = iter([(10, 20), (306, 314)])
     capture = RegionAwareCapture()
+    expanded_region = ScreenRegion(
+        0,
+        0,
+        296 + (10 - max(0, 10 - ROUGH_CALIBRATION_MARGIN_PX)) + ROUGH_CALIBRATION_MARGIN_PX,
+        294 + (20 - max(0, 20 - ROUGH_CALIBRATION_MARGIN_PX)) + ROUGH_CALIBRATION_MARGIN_PX,
+    )
 
     result = CalibrationWizard(
         capture=capture,
@@ -460,9 +552,11 @@ def test_wizard_aligns_board_region_to_snapped_tile_grid_before_capture() -> Non
         read_int=lambda _prompt: 12,
         click=lambda _x, _y: None,
         sleep=lambda _seconds: None,
-        grid_detector=_fixed_grid_detector(
-            col_boundaries=tuple(range(0, 301, 10)),
-            row_boundaries=tuple(range(0, 291, 10)),
+        grid_detector=lambda _pixels, region: TileGrid(
+            origin_left=region.left,
+            origin_top=region.top,
+            col_boundaries=tuple(range(10, 311, 10)),
+            row_boundaries=tuple(range(20, 311, 10)),
         ),
         profile_builder=lambda *_args: ColorProfiles(
             hidden_bg=(20, 20, 20),
@@ -477,7 +571,7 @@ def test_wizard_aligns_board_region_to_snapped_tile_grid_before_capture() -> Non
     aligned_region = ScreenRegion(10, 20, 300, 290)
     assert result.board_region == aligned_region
     assert capture.calls == [
-        ScreenRegion(10, 20, 296, 294),
+        expanded_region,
         aligned_region,
         aligned_region,
     ]
@@ -500,7 +594,7 @@ def test_wizard_rejects_bad_tile_alignment() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="board content|tile alignment"):
+    with pytest.raises(ValueError, match="board content|tile alignment|repeating grid boundaries"):
         wizard.run()
 
 
@@ -651,6 +745,31 @@ def test_live_profile_builder_collects_visible_number_colors() -> None:
     assert profiles.number_colors[2] == (0, 180, 0)
 
 
+def test_live_profile_builder_collects_visible_number_colors_when_digit_is_off_center() -> None:
+    before = FakePixelGrid([[(20, 20, 20)] * 10 for _ in range(10)])
+    after_pixels = [[(20, 20, 20)] * 10 for _ in range(10)]
+    for y in range(0, 5):
+        for x in range(0, 5):
+            after_pixels[y][x] = (220, 220, 220)
+    for y in range(5, 10):
+        for x in range(5, 10):
+            after_pixels[y][x] = (220, 220, 220)
+    for y in range(7, 9):
+        for x in range(5, 7):
+            after_pixels[y][x] = (0, 180, 0)
+    after = FakePixelGrid(after_pixels)
+
+    profiles = _build_live_profiles(
+        before_pixels=before,
+        after_pixels=after,
+        width=2,
+        height=2,
+        tile_size=TileSize(5, 5),
+    )
+
+    assert profiles.number_colors[2] == (0, 180, 0)
+
+
 def test_live_profile_builder_uses_variable_tile_rects_from_grid() -> None:
     before_pixels = [[(20, 20, 20)] * 10 for _ in range(9)]
     after_pixels = [[(20, 20, 20)] * 10 for _ in range(9)]
@@ -716,6 +835,7 @@ def test_wizard_clicks_board_center_before_second_capture() -> None:
             col_boundaries=(0, 10, 20, 30, 40),
             row_boundaries=(0, 10, 20, 30, 40),
         ),
+        rough_calibration_margin_px=0,
         profile_builder=lambda *_args: ColorProfiles(
             hidden_bg=(20, 20, 20),
             revealed_bg=(220, 220, 220),

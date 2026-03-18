@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Minesweeper Online Bridge",
+  "version": "0.1.0",
+  "description": "Reads Minesweeper Online board state from the DOM and brokers commands back to the page.",
+  "permissions": ["tabs"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://minesweeperonline.com/*",
+    "https://www.minesweeperonline.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://minesweeperonline.com/*",
+        "https://www.minesweeperonline.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Minesweeper Online Bridge"
+  }
+}

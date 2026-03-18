@@ -8,7 +8,7 @@ from minesweeper.external.classifier import ColorProfiles
 from minesweeper.external.errors import BoardReadError, CalibrationError
 from minesweeper.external.grid import TileGrid
 from minesweeper.external.runtime import STOP_REASONS
-from minesweeper.external.debug_capture import dump_capture
+from minesweeper.external.debug_capture import dump_capture, dump_move_overlay, write_debug_metadata
 
 
 def test_external_api_exports_spec_entrypoints() -> None:
@@ -211,3 +211,68 @@ def test_debug_capture_helper_saves_image_like_objects(tmp_path: Path) -> None:
     dump_capture(FakeImage(), tmp_path / "capture.png", warn=lambda _message: None)
 
     assert saved == [tmp_path / "capture.png"]
+
+
+def test_debug_capture_helper_writes_move_overlay_with_tile_and_click_annotations(
+    tmp_path: Path,
+) -> None:
+    saved: list[Path] = []
+    operations: list[tuple[str, object]] = []
+
+    class FakeImage:
+        def copy(self):
+            operations.append(("copy", None))
+            return self
+
+        def save(self, path: Path) -> None:
+            saved.append(Path(path))
+
+    class FakeDraw:
+        def rectangle(self, bounds, outline=None, width=1) -> None:
+            operations.append(("rectangle", bounds, outline, width))
+
+        def line(self, points, fill=None, width=1) -> None:
+            operations.append(("line", tuple(points), fill, width))
+
+        def ellipse(self, bounds, fill=None, outline=None, width=1) -> None:
+            operations.append(("ellipse", bounds, fill, outline, width))
+
+        def text(self, position, text, fill=None) -> None:
+            operations.append(("text", position, text, fill))
+
+    dump_move_overlay(
+        FakeImage(),
+        tmp_path / "move.png",
+        tile_bounds=(10, 20, 19, 29),
+        click_point=(15, 25),
+        label="REVEAL (1,2)",
+        warn=lambda _message: None,
+        draw_factory=lambda image: FakeDraw(),
+    )
+
+    assert saved == [tmp_path / "move.png"]
+    assert ("copy", None) in operations
+    assert ("rectangle", (10, 20, 19, 29), "#ff00ff", 3) in operations
+    assert ("rectangle", (12, 22, 17, 27), "#ffff00", 1) in operations
+    assert ("line", ((15, 20), (15, 29)), "#00ffff", 1) in operations
+    assert ("line", ((10, 25), (19, 25)), "#00ffff", 1) in operations
+    assert ("ellipse", (12, 22, 18, 28), "#00ffff", "white", 1) in operations
+    assert ("text", (10, 8), "REVEAL (1,2)", "#ff00ff") in operations
+
+
+def test_debug_capture_helper_writes_json_metadata(tmp_path: Path) -> None:
+    write_debug_metadata(
+        {"move_index": 3, "coord": {"x": 4, "y": 5}},
+        tmp_path / "move.json",
+        warn=lambda _message: None,
+    )
+
+    assert (tmp_path / "move.json").read_text(encoding="utf-8") == (
+        '{\n'
+        '  "move_index": 3,\n'
+        '  "coord": {\n'
+        '    "x": 4,\n'
+        '    "y": 5\n'
+        '  }\n'
+        '}'
+    )

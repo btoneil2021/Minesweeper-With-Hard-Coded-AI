@@ -15,6 +15,7 @@ from minesweeper.external.classifier import (
     ColorProfiles,
     average_color,
     color_distance,
+    sample_accent,
     sample_background,
     sample_center,
 )
@@ -47,6 +48,7 @@ class _PynputModules(NamedTuple):
 
 QUIET_ALIGNMENT_TOLERANCE = 0.15
 SNAP_ALIGNMENT_TOLERANCE = 0.45
+ROUGH_CALIBRATION_MARGIN_PX = 96
 
 
 class _GuardedClickCollector:
@@ -180,7 +182,7 @@ def _build_live_profiles(
         raise ValueError("width and height are required when grid is not provided")
 
     hidden_samples = [
-        sample_background(_tile_pixels(before_pixels, Coord(x, y), tile_size=tile_size, grid=grid))
+        sample_center(_tile_pixels(before_pixels, Coord(x, y), tile_size=tile_size, grid=grid))
         for x in range(width)
         for y in range(height)
     ]
@@ -203,11 +205,19 @@ def _build_live_profiles(
         tile = _tile_pixels(after_pixels, coord, tile_size=tile_size, grid=grid)
         background = sample_background(tile)
         center = sample_center(tile)
-        revealed_samples.append(background)
-        if color_distance(center, background) > 20:
-            number = _infer_number_from_color(center)
+        accent = sample_accent(tile, background)
+        if accent is None:
+            revealed_samples.append(center)
+        if accent is not None:
+            number = _infer_number_from_color(accent)
             if number is not None:
-                number_colors[number] = center
+                number_colors[number] = accent
+
+    if not revealed_samples:
+        revealed_samples = [
+            sample_background(_tile_pixels(after_pixels, coord, tile_size=tile_size, grid=grid))
+            for coord in changed_coords
+        ]
 
     revealed_bg = average_color(revealed_samples)
     return ColorProfiles(
@@ -396,6 +406,60 @@ def _normalize_grid(grid: TileGrid) -> tuple[TileGrid, ScreenRegion]:
     return normalized, board_region
 
 
+def _regular_grid_from_region(
+    region: ScreenRegion,
+    width: int,
+    height: int,
+) -> TileGrid:
+    return TileGrid(
+        origin_left=region.left,
+        origin_top=region.top,
+        col_boundaries=tuple(
+            round(index * region.width / width)
+            for index in range(width + 1)
+        ),
+        row_boundaries=tuple(
+            round(index * region.height / height)
+            for index in range(height + 1)
+        ),
+    )
+
+
+def _grid_looks_implausibly_small(
+    board_region: ScreenRegion,
+    clicked_board_region: ScreenRegion,
+) -> bool:
+    return (
+        board_region.width < clicked_board_region.width * 0.6
+        or board_region.height < clicked_board_region.height * 0.6
+    )
+
+
+def _standard_board_dimensions(num_mines: int) -> tuple[int, int] | None:
+    presets = {
+        10: (9, 9),
+        40: (16, 16),
+        99: (30, 16),
+    }
+    return presets.get(num_mines)
+
+
+def _expand_region(region: ScreenRegion, margin_px: int) -> ScreenRegion:
+    if margin_px <= 0:
+        return region
+
+    left = max(0, region.left - margin_px)
+    top = max(0, region.top - margin_px)
+    right = region.left + region.width + margin_px
+    bottom = region.top + region.height + margin_px
+    return ScreenRegion(
+        left=left,
+        top=top,
+        width=right - left,
+        height=bottom - top,
+    )
+
+
 def _grid_tile_size(grid: TileGrid) -> TileSize:
     widths = sorted(
         grid.col_boundaries[index + 1] - grid.col_boundaries[index]
@@ -438,6 +502,7 @@ class CalibrationWizard:
         click: Callable[[int, int], None] | None = None,
         sleep: Callable[[float], None] | None = None,
         settle_delay_ms: int = 750,
+        rough_calibration_margin_px: int = ROUGH_CALIBRATION_MARGIN_PX,
         profile_builder: Callable[[Any, Any, int, int, TileSize, TileGrid], ColorProfiles] | None = None,
         grid_detector: Callable[[Any, ScreenRegion], TileGrid] | None = None,
         output: Callable[[str], None] | None = None,
@@ -465,6 +530,7 @@ class CalibrationWizard:
         self._click = click or _default_click
         self._sleep = sleep or time.sleep
         self._settle_delay_seconds = settle_delay_ms / 1000
+        self._rough_calibration_margin_px = rough_calibration_margin_px
         self._profile_builder = profile_builder or _default_profile_builder
         self._grid_detector = grid_detector or (
             lambda pixels, region: detect_tile_grid(
@@ -478,17 +544,43 @@ class CalibrationWizard:
     def run(self) -> CalibrationResult:
         board_top_left = self._capture_point("Capture the top-left corner of the board.")
         board_bottom_right = self._capture_point("Capture the bottom-right corner of the board.")
-        rough_board_region = ScreenRegion(
+        clicked_board_region = ScreenRegion(
             left=board_top_left[0],
             top=board_top_left[1],
             width=board_bottom_right[0] - board_top_left[0],
             height=board_bottom_right[1] - board_top_left[1],
         )
+        rough_board_region = _expand_region(clicked_board_region, self._rough_calibration_margin_px)
+        num_mines = self._read_int("Enter the mine count")
 
         rough_before_pixels = self._capture.grab(rough_board_region)
         grid, board_region = _normalize_grid(
             self._grid_detector(rough_before_pixels, rough_board_region)
         )
+        if _grid_looks_implausibly_small(board_region, clicked_board_region):
+            standard_dimensions = _standard_board_dimensions(num_mines)
+            if standard_dimensions is not None:
+                fallback_width, fallback_height = standard_dimensions
+            else:
+                fallback_width = _derive_dimension(
+                    "Board width",
+                    clicked_board_region.width,
+                    _grid_tile_size(grid).width,
+                    self._output,
+                )
+                fallback_height = _derive_dimension(
+                    "Board height",
+                    clicked_board_region.height,
+                    _grid_tile_size(grid).height,
+                    self._output,
+                )
+            grid, board_region = _normalize_grid(
+                _regular_grid_from_region(
+                    clicked_board_region,
+                    width=fallback_width,
+                    height=fallback_height,
+                )
+            )
         width = grid.width
         height = grid.height
         tile_size = _grid_tile_size(grid)
@@ -506,7 +598,6 @@ class CalibrationWizard:
             height,
             self._output,
         )
-        num_mines = self._read_int("Enter the mine count")
         before_pixels = self._capture.grab(board_region)
         if self._debug_capture_dir is not None:
             dump_capture(

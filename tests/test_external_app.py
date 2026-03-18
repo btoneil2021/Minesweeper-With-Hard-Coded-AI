@@ -27,6 +27,8 @@ class FakeBoardReader:
         self.height = height
         self.num_mines = num_mines
         self.refresh_calls = 0
+        self.remembered_batches: list[list[Move]] = []
+        self.externally_resolved_coords: set[Coord] = set()
 
     def refresh(self) -> None:
         self.refresh_calls += 1
@@ -36,6 +38,14 @@ class FakeBoardReader:
 
     def tile_at(self, coord: Coord) -> Tile:
         return self._current[coord]
+
+    def remember_moves(self, moves: Sequence[Move]) -> None:
+        self.remembered_batches.append(list(moves))
+        for move in moves:
+            self.externally_resolved_coords.add(move.coord)
+
+    def is_externally_resolved(self, coord: Coord) -> bool:
+        return coord in self.externally_resolved_coords
 
 
 class FailingBoardReader:
@@ -172,6 +182,28 @@ def test_external_app_retries_refresh_once_when_board_does_not_change() -> None:
     assert reason == STOP_REASONS.board_unchanged_after_retry
 
 
+def test_external_app_remembers_successfully_executed_flag_batches_for_future_refreshes() -> None:
+    hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
+    board_reader = FakeBoardReader([hidden, hidden, hidden])
+    executor = RecordingExecutor()
+    flag_move = Move(ActionType.FLAG, Coord(0, 0))
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=executor,
+        strategies=[FakeStrategy("Flag", [flag_move])],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert executor.batches == [[flag_move]]
+    assert board_reader.remembered_batches == [[flag_move]]
+    assert reason == STOP_REASONS.board_unchanged_after_retry
+
+
 def test_external_app_stops_when_board_looks_complete() -> None:
     complete = {Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 0)}
     board_reader = FakeBoardReader([complete])
@@ -239,6 +271,7 @@ def test_external_app_logs_unchanged_board_retry_and_stop() -> None:
     assert messages == [
         "External: refreshing board snapshot",
         "External: using Reveal with 1 move",
+        "External: executing batch 0 with 1 move before next refresh",
         "External: refreshing board snapshot",
         "External: board unchanged after move; retrying once",
         "External: refreshing board snapshot",
@@ -290,7 +323,187 @@ def test_external_app_logs_strategy_name_and_move_count() -> None:
     reason = app.run()
 
     assert "External: using Reveal with 1 move" in messages
+    assert "External: executing batch 0 with 1 move before next refresh" in messages
     assert reason == STOP_REASONS.terminal_board_detected
+
+
+def test_external_app_logs_batch_size_before_refresh() -> None:
+    hidden = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.HIDDEN, False),
+    }
+    revealed = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 0),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.FLAGGED, False),
+    }
+    board_reader = FakeBoardReader([hidden, revealed], width=1, height=2)
+    messages: list[str] = []
+    moves = [
+        Move(ActionType.REVEAL, Coord(0, 0)),
+        Move(ActionType.FLAG, Coord(0, 1)),
+    ]
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Reveal", moves)],
+        sleep=lambda _seconds: None,
+        output=lambda message: messages.append(message),
+    )
+
+    app.run()
+
+    assert "External: executing batch 0 with 1 move before next refresh" in messages
+
+
+def test_external_app_limits_flag_batches_to_one_live_move_before_refresh() -> None:
+    hidden = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.HIDDEN, False),
+        Coord(0, 2): Tile(Coord(0, 2), TileState.HIDDEN, False),
+    }
+    progressed = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.FLAGGED, False),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.HIDDEN, False),
+        Coord(0, 2): Tile(Coord(0, 2), TileState.HIDDEN, False),
+    }
+    board_reader = FakeBoardReader([hidden, progressed], width=1, height=3)
+    executor = RecordingExecutor()
+    moves = [
+        Move(ActionType.FLAG, Coord(0, 0)),
+        Move(ActionType.FLAG, Coord(0, 1)),
+        Move(ActionType.FLAG, Coord(0, 2)),
+    ]
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=executor,
+        strategies=[FakeStrategy("Flags", moves)],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert executor.batches == [[Move(ActionType.FLAG, Coord(0, 0))]]
+    assert board_reader.remembered_batches == [[Move(ActionType.FLAG, Coord(0, 0))]]
+    assert reason == STOP_REASONS.no_moves_available
+
+
+def test_external_app_skips_strategy_with_conflicting_actions_for_same_coord() -> None:
+    hidden = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.HIDDEN, False),
+    }
+    progressed = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 0),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.REVEALED, False, 0),
+    }
+    board_reader = FakeBoardReader([hidden, progressed], width=1, height=2)
+    executor = RecordingExecutor()
+    bad_strategy = FakeStrategy(
+        "Bad",
+        [
+            Move(ActionType.FLAG, Coord(0, 0)),
+            Move(ActionType.REVEAL, Coord(0, 0)),
+        ],
+    )
+    good_strategy = FakeStrategy(
+        "Good",
+        [Move(ActionType.REVEAL, Coord(0, 1))],
+    )
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=executor,
+        strategies=[bad_strategy, good_strategy],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert bad_strategy.calls == 1
+    assert good_strategy.calls == 1
+    assert executor.batches == [[Move(ActionType.REVEAL, Coord(0, 1))]]
+    assert reason == STOP_REASONS.terminal_board_detected
+
+
+def test_external_app_skips_strategy_moves_that_target_non_hidden_tiles() -> None:
+    hidden = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 1),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.HIDDEN, False),
+    }
+    progressed = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.REVEALED, False, 1),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.REVEALED, False, 0),
+    }
+    board_reader = FakeBoardReader([hidden, progressed], width=1, height=2)
+    executor = RecordingExecutor()
+    stale_strategy = FakeStrategy(
+        "Stale",
+        [Move(ActionType.FLAG, Coord(0, 0))],
+    )
+    good_strategy = FakeStrategy(
+        "Good",
+        [Move(ActionType.REVEAL, Coord(0, 1))],
+    )
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=executor,
+        strategies=[stale_strategy, good_strategy],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert stale_strategy.calls == 1
+    assert good_strategy.calls == 1
+    assert executor.batches == [[Move(ActionType.REVEAL, Coord(0, 1))]]
+    assert reason == STOP_REASONS.terminal_board_detected
+
+
+def test_external_app_skips_repeated_reveals_for_coords_already_clicked_live() -> None:
+    hidden = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.HIDDEN, False),
+    }
+    changed_elsewhere = {
+        Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False),
+        Coord(0, 1): Tile(Coord(0, 1), TileState.REVEALED, False, 0),
+    }
+    board_reader = FakeBoardReader([hidden, changed_elsewhere], width=1, height=2)
+    executor = RecordingExecutor()
+    first_strategy = FakeStrategy(
+        "First",
+        [Move(ActionType.REVEAL, Coord(0, 0))],
+    )
+    repeated_strategy = FakeStrategy(
+        "Repeated",
+        [Move(ActionType.REVEAL, Coord(0, 0))],
+    )
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=executor,
+        strategies=[first_strategy, repeated_strategy],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert executor.batches == [[Move(ActionType.REVEAL, Coord(0, 0))]]
+    assert board_reader.remembered_batches == [[Move(ActionType.REVEAL, Coord(0, 0))]]
+    assert reason == STOP_REASONS.no_moves_available
 
 
 def test_external_app_returns_refresh_failure_stop_after_one_retry() -> None:

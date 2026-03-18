@@ -26,6 +26,7 @@ class ScreenMoveExecutor:
         grid: TileGrid | None = None,
         click_inset: int = 4,
         click_delay_ms: int = 40,
+        before_click: Callable[[Move, int, int, int, int], None] | None = None,
         left_click: Callable[[int, int], None] | None = None,
         right_click: Callable[[int, int], None] | None = None,
         delay: Callable[[float], None] | None = None,
@@ -36,17 +37,20 @@ class ScreenMoveExecutor:
         self._grid = grid
         self._click_inset = click_inset
         self._click_delay_seconds = click_delay_ms / 1000
+        self._before_click = before_click
         self._pyautogui_loader = pyautogui_loader or _load_pyautogui
         self._left_click = left_click
         self._right_click = right_click
         self._delay = delay
 
-    def execute(self, move: Move) -> None:
+    def execute(self, move: Move, move_index: int = 0, batch_size: int = 1) -> None:
         point = self._screen_point(move)
         if point is None:
             return
 
         x, y = point
+        if self._before_click is not None:
+            self._before_click(move, x, y, move_index, batch_size)
         if move.action == ActionType.REVEAL:
             self._resolve_left_click()(x, y)
             return
@@ -57,7 +61,7 @@ class ScreenMoveExecutor:
 
     def execute_batch(self, moves: Sequence[Move]) -> None:
         for index, move in enumerate(moves):
-            self.execute(move)
+            self.execute(move, move_index=index, batch_size=len(moves))
             if index < len(moves) - 1:
                 self._resolve_delay()(self._click_delay_seconds)
 

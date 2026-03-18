@@ -10,6 +10,7 @@ The current rewrite lives under the lowercase `minesweeper/` package and separat
 - `minesweeper/ui/` for rendering and input translation
 - `minesweeper/app.py` for top-level orchestration
 - `minesweeper/external/` for screen capture, calibration, and external-board automation
+- `minesweeper/external/browser/` for the `minesweeperonline.com` DOM bridge path
 
 The current UI includes:
 
@@ -52,6 +53,8 @@ If you want to try the external bot mode too:
 python -m pip install mss Pillow pyautogui pynput
 ```
 
+If you want to try the browser DOM path too, use a Chromium-based browser such as Comet. The repo includes a minimal extension skeleton for `minesweeperonline.com`, but the real live bridge is still a work in progress.
+
 ## Quick Start
 
 Launch the default player mode:
@@ -70,7 +73,7 @@ python -m minesweeper --help
 
 The launcher supports:
 
-- `--mode {player,ai,hybrid,external}`
+- `--mode {player,ai,hybrid,external,browser-dom}`
 - `--width`
 - `--height`
 - `--mines`
@@ -101,6 +104,12 @@ External mode:
 
 ```bash
 python -m minesweeper --mode external
+```
+
+Browser DOM mode:
+
+```bash
+python -m minesweeper --mode browser-dom
 ```
 
 Classic intermediate-style board:
@@ -140,8 +149,39 @@ That writes:
 - `debug-captures/calibration/board_before_open.png`
 - `debug-captures/calibration/board_after_open.png`
 - `debug-captures/runtime/refresh_000.png`, `refresh_001.png`, ...
+- `debug-captures/runtime/move_000.png`, `move_001.png`, ...
 
 Use that flag only when you want to inspect what raw board region the external runtime actually captured during calibration and refresh.
+The `move_*.png` overlays mark the chosen tile bounds and the exact click pixel for each executed move.
+
+## Browser DOM Mode
+
+`browser-dom` is the new `minesweeperonline.com`-specific path. It uses the page DOM instead of screenshots, which is a much better fit for the site than the screen-scraping fallback.
+
+What is available now:
+
+1. A Python-side DOM protocol, reader, executor, bridge, and app loop under `minesweeper/external/browser/`
+2. A minimal MV3 extension skeleton under `browser-extension/minesweeperonline-bridge/`
+3. Launcher support for `python -m minesweeper --mode browser-dom`
+
+What is not available yet:
+
+1. A real extension-to-Python bridge connection
+2. Automatic live board streaming from the browser into the solver loop
+
+To load the extension skeleton:
+
+1. Open Comet or another Chromium-based browser.
+2. Visit `chrome://extensions`.
+3. Enable developer mode.
+4. Choose `Load unpacked`.
+5. Select `browser-extension/minesweeperonline-bridge/` from this repository.
+
+Troubleshooting:
+
+1. If `browser-dom` exits with `browser-dom mode requires a connected extension session`, the extension has not yet produced a board snapshot.
+2. If the mode appears idle, make sure `https://minesweeperonline.com` is open and an actual game has been started.
+3. `--debug-captures` only applies to screenshot-based `external` mode, not `browser-dom`.
 
 The current calibration flow gathers:
 
@@ -195,6 +235,12 @@ External mode:
 - hold `Shift` while left-clicking the requested calibration corners
 - move the target game window only when you intend to recalibrate
 - use `pyautogui`'s built-in failsafe behavior to stop live automation if needed
+
+Browser DOM mode:
+
+- open a live `minesweeperonline.com` game tab before launching
+- load the browser extension skeleton first
+- expect the current `browser-dom` path to require the future live bridge wiring before it can actually play a game
 
 ## AI Strategy Order
 

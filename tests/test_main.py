@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 import minesweeper.__main__ as main_module
 from minesweeper.domain.types import AI_ONLY, HYBRID, PLAYER_ONLY
 
@@ -13,6 +15,7 @@ def test_parse_mode_maps_cli_values_to_constants() -> None:
     assert main_module.parse_mode("ai") is AI_ONLY
     assert main_module.parse_mode("hybrid") is HYBRID
     assert main_module.parse_mode("external") == "external"
+    assert main_module.parse_mode("browser-dom") == "browser-dom"
 
 
 def test_main_builds_app_with_cli_config(monkeypatch) -> None:
@@ -139,3 +142,24 @@ def test_main_passes_debug_capture_dir_to_external_mode(monkeypatch) -> None:
     assert exit_code == 0
     assert recorded["debug_capture_dir"] == Path("tmp/debug-captures")
     assert recorded["external_ran"] is True
+
+
+def test_main_surfaces_browser_dom_bridge_bind_failure(monkeypatch, capsys) -> None:
+    class UnexpectedApp:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise AssertionError("local App should not be constructed in browser-dom mode")
+
+    def raise_bind_error(**_kwargs):
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(main_module, "App", UnexpectedApp)
+    monkeypatch.setattr(main_module, "_run_browser_dom", raise_bind_error)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main_module.main(["--mode", "browser-dom"])
+
+    assert excinfo.value.code == 2
+    assert (
+        "browser-dom HTTP bridge could not bind: address already in use"
+        in capsys.readouterr().err
+    )
