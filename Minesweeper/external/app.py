@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from minesweeper.ai.analyzer import Analyzer
 from minesweeper.ai.strategy import AIStrategy
@@ -17,7 +18,9 @@ from minesweeper.external.board_reader import ScreenBoardReader
 from minesweeper.external.calibration import CalibrationResult
 from minesweeper.external.capture import ScreenCapture
 from minesweeper.external.classifier import TileClassifier
+from minesweeper.external.errors import BoardReadError, ExecutionError
 from minesweeper.external.executor import ScreenMoveExecutor
+from minesweeper.external.runtime import STOP_REASONS
 
 
 class ExternalApp:
@@ -25,6 +28,10 @@ class ExternalApp:
         self,
         calibration: CalibrationResult,
         settle_delay_ms: int = 400,
+        click_delay_ms: int = 40,
+        board_read_retries: int = 1,
+        unchanged_board_retries: int = 1,
+        debug_capture_dir: Path | None = None,
         capture: ScreenCapture | None = None,
         classifier: TileClassifier | None = None,
         board_reader: ScreenBoardReader | None = None,
@@ -36,6 +43,8 @@ class ExternalApp:
     ) -> None:
         self._calibration = calibration
         self._settle_delay_seconds = settle_delay_ms / 1000
+        self._board_read_retries = board_read_retries
+        self._unchanged_board_retries = unchanged_board_retries
         self._sleep = sleep or time.sleep
         self._output = output or (lambda _message: None)
 
@@ -50,11 +59,14 @@ class ExternalApp:
             height=calibration.height,
             num_mines=calibration.num_mines,
             grid=calibration.grid,
+            debug_capture_dir=debug_capture_dir,
+            output=self._output,
         )
         self._executor = executor or ScreenMoveExecutor(
             board_region=calibration.board_region,
             tile_size=calibration.tile_size,
             grid=calibration.grid,
+            click_delay_ms=click_delay_ms,
         )
         self._analyzer = analyzer or Analyzer()
         self._rng = random.Random()
@@ -66,41 +78,74 @@ class ExternalApp:
             ProbabilitySolver(),
         ]
 
-    def run(self) -> None:
-        unchanged_after_move = 0
+    def run(self) -> str:
         while True:
-            self._output("External: refreshing board snapshot")
-            self._board_reader.refresh()
+            refresh_failure = self._refresh_with_retry()
+            if refresh_failure is not None:
+                return refresh_failure
             if self._board_looks_terminal():
                 self._output("External: board looks terminal; stopping")
-                return
+                return STOP_REASONS.terminal_board_detected
 
             analysis = self._analyzer.analyze(self._board_reader)
             moves = self._next_moves(analysis)
             if not moves:
                 self._output("External: no moves available; stopping")
-                return
+                return STOP_REASONS.no_moves_available
 
             before = self._board_signature()
-            self._executor.execute_batch(moves)
+            try:
+                self._executor.execute_batch(moves)
+            except ExecutionError as exc:
+                if str(exc) == STOP_REASONS.unsupported_move_type:
+                    return STOP_REASONS.unsupported_move_type
+                return STOP_REASONS.execution_failed
             self._sleep(self._settle_delay_seconds)
 
-            self._board_reader.refresh()
+            refresh_failure = self._refresh_with_retry()
+            if refresh_failure is not None:
+                return refresh_failure
             if self._board_looks_terminal():
                 self._output("External: board looks terminal; stopping")
-                return
+                return STOP_REASONS.terminal_board_detected
 
             after = self._board_signature()
             if after == before:
-                unchanged_after_move += 1
-                if unchanged_after_move >= 2:
+                if self._unchanged_board_retries <= 0:
                     self._output("External: board unchanged after retry; stopping")
-                    return
-                self._output("External: board unchanged after move; retrying once")
-                self._sleep(self._settle_delay_seconds * 2)
-                continue
+                    return STOP_REASONS.board_unchanged_after_retry
 
-            unchanged_after_move = 0
+                for attempt in range(self._unchanged_board_retries):
+                    self._output("External: board unchanged after move; retrying once")
+                    self._sleep(self._settle_delay_seconds * 2)
+                    refresh_failure = self._refresh_with_retry()
+                    if refresh_failure is not None:
+                        return refresh_failure
+                    if self._board_looks_terminal():
+                        self._output("External: board looks terminal; stopping")
+                        return STOP_REASONS.terminal_board_detected
+                    if self._board_signature() != before:
+                        break
+                    if attempt == self._unchanged_board_retries - 1:
+                        self._output("External: board unchanged after retry; stopping")
+                        return STOP_REASONS.board_unchanged_after_retry
+
+    def _refresh_with_retry(self) -> str | None:
+        self._output("External: refreshing board snapshot")
+        try:
+            self._board_reader.refresh()
+            return None
+        except BoardReadError:
+            for attempt in range(self._board_read_retries):
+                self._sleep(self._settle_delay_seconds)
+                self._output("External: refreshing board snapshot")
+                try:
+                    self._board_reader.refresh()
+                    return None
+                except BoardReadError:
+                    if attempt == self._board_read_retries - 1:
+                        return STOP_REASONS.board_refresh_failed_after_retry
+            return STOP_REASONS.board_refresh_failed_after_retry
 
     def _next_moves(self, analysis) -> Sequence[Move]:
         for strategy in self._strategies:

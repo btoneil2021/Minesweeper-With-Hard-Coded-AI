@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from minesweeper.external.calibration import (
@@ -27,6 +29,15 @@ class FakePixelGrid:
     def getpixel(self, position: tuple[int, int]) -> tuple[int, int, int]:
         x, y = position
         return self._pixels[y][x]
+
+
+class SavingPixelGrid(FakePixelGrid):
+    def __init__(self, pixels: list[list[tuple[int, int, int]]], saved_paths: list[Path]) -> None:
+        super().__init__(pixels)
+        self._saved_paths = saved_paths
+
+    def save(self, path: Path) -> None:
+        self._saved_paths.append(Path(path))
 
 
 def _board_with_padding(
@@ -166,7 +177,7 @@ def test_calibration_result_carries_shared_geometry_and_profiles() -> None:
 
 
 def test_wizard_returns_detected_tile_grid_from_hidden_snapshot() -> None:
-    points = iter([(10, 20), (120, 90), (10, 20), (42, 50)])
+    points = iter([(10, 20), (120, 90)])
     profiles = ColorProfiles(
         hidden_bg=(20, 20, 20),
         revealed_bg=(220, 220, 220),
@@ -203,6 +214,7 @@ def test_wizard_returns_detected_tile_grid_from_hidden_snapshot() -> None:
         click=lambda _x, _y: None,
         sleep=lambda _seconds: None,
         profile_builder=lambda *_args: profiles,
+        output=lambda _message: None,
     ).run()
 
     assert result.grid == TileGrid(
@@ -325,7 +337,7 @@ def test_derive_dimension_rejects_large_alignment_drift() -> None:
 
 
 def test_wizard_derives_board_dimensions_from_detected_grid() -> None:
-    points = iter([(10, 20), (50, 60), (10, 20), (20, 30)])
+    points = iter([(10, 20), (50, 60)])
     prompts: list[str] = []
     profile_calls: list[tuple[int, int, TileSize]] = []
     profiles = ColorProfiles(
@@ -365,9 +377,9 @@ def test_wizard_derives_board_dimensions_from_detected_grid() -> None:
     assert profile_calls == [(4, 4, TileSize(10, 10))]
 
 
-def test_wizard_uses_capture_point_for_all_geometry_prompts() -> None:
-    points = iter([(10, 20), (50, 60), (10, 20), (20, 30)])
-    capture_prompts: list[str] = []
+def test_wizard_prompts_for_board_bounds_and_mine_count_only() -> None:
+    points = iter([(10, 20), (50, 60)])
+    prompts: list[str] = []
 
     CalibrationWizard(
         capture=FakeCapture(
@@ -376,9 +388,9 @@ def test_wizard_uses_capture_point_for_all_geometry_prompts() -> None:
                 FakePixelGrid([[(220, 220, 220)] * 40 for _ in range(40)]),
             ]
         ),
-        capture_point=lambda prompt: capture_prompts.append(prompt) or next(points),
+        capture_point=lambda prompt: prompts.append(prompt) or next(points),
         read_point=lambda _prompt: pytest.fail("manual point reader should not be used"),
-        read_int=lambda _prompt: 12,
+        read_int=lambda prompt: prompts.append(prompt) or 12,
         click=lambda _x, _y: None,
         sleep=lambda _seconds: None,
         grid_detector=_fixed_grid_detector(
@@ -394,16 +406,15 @@ def test_wizard_uses_capture_point_for_all_geometry_prompts() -> None:
         ),
     ).run()
 
-    assert capture_prompts == [
-        "Click the top-left corner of the top-left tile",
-        "Click the bottom-right corner of the bottom-right tile",
-        "Click the top-left corner of any single tile",
-        "Click the bottom-right corner of that same tile",
+    assert prompts == [
+        "Capture the top-left corner of the board.",
+        "Capture the bottom-right corner of the board.",
+        "Enter the mine count",
     ]
 
 
 def test_wizard_warns_when_board_dimensions_are_snapped() -> None:
-    points = iter([(10, 20), (306, 314), (10, 20), (20, 30)])
+    points = iter([(10, 20), (306, 314)])
     outputs: list[str] = []
 
     result = CalibrationWizard(
@@ -440,7 +451,7 @@ def test_wizard_warns_when_board_dimensions_are_snapped() -> None:
 
 
 def test_wizard_aligns_board_region_to_snapped_tile_grid_before_capture() -> None:
-    points = iter([(10, 20), (306, 314), (10, 20), (20, 30)])
+    points = iter([(10, 20), (306, 314)])
     capture = RegionAwareCapture()
 
     result = CalibrationWizard(
@@ -473,7 +484,7 @@ def test_wizard_aligns_board_region_to_snapped_tile_grid_before_capture() -> Non
 
 
 def test_wizard_rejects_bad_tile_alignment() -> None:
-    points = iter([(0, 0), (365, 300), (0, 0), (10, 10)])
+    points = iter([(0, 0), (365, 300)])
     wizard = CalibrationWizard(
         capture=FakeCapture([FakePixelGrid([[(20, 20, 20)] * 365 for _ in range(300)])]),
         read_point=lambda _prompt: next(points),
@@ -489,8 +500,45 @@ def test_wizard_rejects_bad_tile_alignment() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="tile alignment"):
+    with pytest.raises(ValueError, match="board content|tile alignment"):
         wizard.run()
+
+
+def test_calibration_writes_before_and_after_open_captures(tmp_path: Path) -> None:
+    saved_paths: list[Path] = []
+    points = iter([(10, 20), (50, 60)])
+
+    CalibrationWizard(
+        capture=FakeCapture(
+            [
+                FakePixelGrid([[(20, 20, 20)] * 40 for _ in range(40)]),
+                SavingPixelGrid([[(20, 20, 20)] * 40 for _ in range(40)], saved_paths),
+                SavingPixelGrid([[(220, 220, 220)] * 40 for _ in range(40)], saved_paths),
+            ]
+        ),
+        capture_point=lambda _prompt: next(points),
+        read_int=lambda _prompt: 12,
+        click=lambda _x, _y: None,
+        sleep=lambda _seconds: None,
+        grid_detector=_fixed_grid_detector(
+            col_boundaries=(0, 10, 20, 30, 40),
+            row_boundaries=(0, 10, 20, 30, 40),
+        ),
+        profile_builder=lambda *_args: ColorProfiles(
+            hidden_bg=(20, 20, 20),
+            revealed_bg=(220, 220, 220),
+            flagged_bg=None,
+            number_colors={},
+            mine_bg=None,
+        ),
+        output=lambda _message: None,
+        debug_capture_dir=tmp_path,
+    ).run()
+
+    assert saved_paths == [
+        tmp_path / "calibration" / "board_before_open.png",
+        tmp_path / "calibration" / "board_after_open.png",
+    ]
 
 
 def test_calibration_extracts_one_tile_snapshot_from_board_pixels() -> None:

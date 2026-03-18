@@ -7,7 +7,9 @@ from minesweeper.external.app import ExternalApp
 from minesweeper.external.calibration import CalibrationResult
 from minesweeper.external.capture import ScreenRegion, TileSize
 from minesweeper.external.classifier import ColorProfiles
+from minesweeper.external.errors import BoardReadError, ExecutionError
 from minesweeper.external.grid import TileGrid
+from minesweeper.external.runtime import STOP_REASONS
 
 
 class FakeBoardReader:
@@ -34,6 +36,24 @@ class FakeBoardReader:
 
     def tile_at(self, coord: Coord) -> Tile:
         return self._current[coord]
+
+
+class FailingBoardReader:
+    def __init__(self, fail_times: int) -> None:
+        self._remaining_failures = fail_times
+        self.width = 1
+        self.height = 1
+        self.num_mines = 0
+        self.refresh_calls = 0
+
+    def refresh(self) -> None:
+        self.refresh_calls += 1
+        if self._remaining_failures > 0:
+            self._remaining_failures -= 1
+            raise BoardReadError("boom")
+
+    def tile_at(self, coord: Coord) -> Tile:
+        raise KeyError(coord)
 
 
 class FakeAnalyzer:
@@ -66,6 +86,14 @@ class RecordingExecutor:
 
     def execute_batch(self, moves: Sequence[Move]) -> None:
         self.batches.append(list(moves))
+
+
+class FailingExecutor:
+    def __init__(self, message: str) -> None:
+        self._message = message
+
+    def execute_batch(self, _moves: Sequence[Move]) -> None:
+        raise ExecutionError(self._message)
 
 
 def calibration() -> CalibrationResult:
@@ -111,16 +139,17 @@ def test_external_app_refreshes_analyzes_and_executes_first_non_empty_strategy()
         sleep=lambda seconds: sleeps.append(seconds),
     )
 
-    app.run()
+    reason = app.run()
 
     assert analyzer.calls == 1
     assert empty_strategy.calls == 1
     assert reveal_strategy.calls == 1
     assert executor.batches == [[reveal_move]]
     assert sleeps == [0.4]
+    assert reason == STOP_REASONS.terminal_board_detected
 
 
-def test_external_app_retries_once_when_board_does_not_change() -> None:
+def test_external_app_retries_refresh_once_when_board_does_not_change() -> None:
     hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
     board_reader = FakeBoardReader([hidden, hidden, hidden])
     executor = RecordingExecutor()
@@ -136,10 +165,11 @@ def test_external_app_retries_once_when_board_does_not_change() -> None:
         sleep=lambda seconds: sleeps.append(seconds),
     )
 
-    app.run()
+    reason = app.run()
 
-    assert executor.batches == [[reveal_move], [reveal_move]]
-    assert sleeps == [0.4, 0.8, 0.4]
+    assert executor.batches == [[reveal_move]]
+    assert sleeps == [0.4, 0.8]
+    assert reason == STOP_REASONS.board_unchanged_after_retry
 
 
 def test_external_app_stops_when_board_looks_complete() -> None:
@@ -157,11 +187,12 @@ def test_external_app_stops_when_board_looks_complete() -> None:
         strategies=[strategy],
     )
 
-    app.run()
+    reason = app.run()
 
     assert analyzer.calls == 0
     assert strategy.calls == 0
     assert executor.batches == []
+    assert reason == STOP_REASONS.terminal_board_detected
 
 
 def test_external_app_logs_no_moves_stop_when_output_is_enabled() -> None:
@@ -178,12 +209,13 @@ def test_external_app_logs_no_moves_stop_when_output_is_enabled() -> None:
         output=lambda message: messages.append(message),
     )
 
-    app.run()
+    reason = app.run()
 
     assert messages == [
         "External: refreshing board snapshot",
         "External: no moves available; stopping",
     ]
+    assert reason == STOP_REASONS.no_moves_available
 
 
 def test_external_app_logs_unchanged_board_retry_and_stop() -> None:
@@ -202,16 +234,17 @@ def test_external_app_logs_unchanged_board_retry_and_stop() -> None:
         output=lambda message: messages.append(message),
     )
 
-    app.run()
+    reason = app.run()
 
     assert messages == [
         "External: refreshing board snapshot",
         "External: using Reveal with 1 move",
+        "External: refreshing board snapshot",
         "External: board unchanged after move; retrying once",
         "External: refreshing board snapshot",
-        "External: using Reveal with 1 move",
         "External: board unchanged after retry; stopping",
     ]
+    assert reason == STOP_REASONS.board_unchanged_after_retry
 
 
 def test_external_app_logs_terminal_stop() -> None:
@@ -228,12 +261,13 @@ def test_external_app_logs_terminal_stop() -> None:
         output=lambda message: messages.append(message),
     )
 
-    app.run()
+    reason = app.run()
 
     assert messages == [
         "External: refreshing board snapshot",
         "External: board looks terminal; stopping",
     ]
+    assert reason == STOP_REASONS.terminal_board_detected
 
 
 def test_external_app_logs_strategy_name_and_move_count() -> None:
@@ -253,9 +287,83 @@ def test_external_app_logs_strategy_name_and_move_count() -> None:
         output=lambda message: messages.append(message),
     )
 
-    app.run()
+    reason = app.run()
 
     assert "External: using Reveal with 1 move" in messages
+    assert reason == STOP_REASONS.terminal_board_detected
+
+
+def test_external_app_returns_refresh_failure_stop_after_one_retry() -> None:
+    board_reader = FailingBoardReader(fail_times=2)
+    sleeps: list[float] = []
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Unused", [])],
+        sleep=lambda seconds: sleeps.append(seconds),
+    )
+
+    reason = app.run()
+
+    assert reason == STOP_REASONS.board_refresh_failed_after_retry
+    assert board_reader.refresh_calls == 2
+    assert sleeps == [0.4]
+
+
+def test_external_app_respects_zero_board_read_retries() -> None:
+    board_reader = FailingBoardReader(fail_times=1)
+    sleeps: list[float] = []
+
+    app = ExternalApp(
+        calibration(),
+        board_reader=board_reader,
+        analyzer=FakeAnalyzer(),
+        executor=RecordingExecutor(),
+        strategies=[FakeStrategy("Unused", [])],
+        sleep=lambda seconds: sleeps.append(seconds),
+        board_read_retries=0,
+    )
+
+    reason = app.run()
+
+    assert reason == STOP_REASONS.board_refresh_failed_after_retry
+    assert board_reader.refresh_calls == 1
+    assert sleeps == []
+
+
+def test_external_app_returns_unsupported_move_type_stop_reason() -> None:
+    hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
+    app = ExternalApp(
+        calibration(),
+        board_reader=FakeBoardReader([hidden]),
+        analyzer=FakeAnalyzer(),
+        executor=FailingExecutor("unsupported move type"),
+        strategies=[FakeStrategy("Reveal", [Move(ActionType.REVEAL, Coord(0, 0))])],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert reason == STOP_REASONS.unsupported_move_type
+
+
+def test_external_app_returns_execution_failed_stop_reason() -> None:
+    hidden = {Coord(0, 0): Tile(Coord(0, 0), TileState.HIDDEN, False)}
+    app = ExternalApp(
+        calibration(),
+        board_reader=FakeBoardReader([hidden]),
+        analyzer=FakeAnalyzer(),
+        executor=FailingExecutor("mouse click failed"),
+        strategies=[FakeStrategy("Reveal", [Move(ActionType.REVEAL, Coord(0, 0))])],
+        sleep=lambda _seconds: None,
+    )
+
+    reason = app.run()
+
+    assert reason == STOP_REASONS.execution_failed
 
 
 def test_external_app_passes_calibration_grid_to_default_runtime_components(monkeypatch) -> None:

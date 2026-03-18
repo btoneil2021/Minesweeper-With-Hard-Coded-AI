@@ -5,6 +5,7 @@ from typing import Any, NamedTuple
 
 from minesweeper.domain.tile import Tile
 from minesweeper.domain.types import Coord, TileState
+from minesweeper.external.errors import BoardReadError
 
 Color = tuple[int, int, int]
 PixelGrid = Any
@@ -66,7 +67,10 @@ class TileClassifier:
         background = sample_background(pixels)
         state = self._match_background(background)
 
-        if state is None or state == TileState.HIDDEN:
+        if state is None:
+            raise BoardReadError(f"untrusted tile background at {coord}")
+
+        if state == TileState.HIDDEN:
             return self._remember(Tile(coord=coord, state=TileState.HIDDEN, is_mine=False))
 
         if state == TileState.FLAGGED:

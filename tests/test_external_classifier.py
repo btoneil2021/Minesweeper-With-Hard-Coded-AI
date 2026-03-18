@@ -1,4 +1,7 @@
+import pytest
+
 from minesweeper.domain.types import Coord, TileState
+from minesweeper.external.errors import BoardReadError
 from minesweeper.external.classifier import ColorProfiles, TileClassifier, color_distance
 
 
@@ -72,7 +75,7 @@ def test_classifier_returns_revealed_number_for_center_accent_color() -> None:
     assert tile.is_mine is False
 
 
-def test_classifier_defaults_to_hidden_for_unknown_profile() -> None:
+def test_classifier_raises_for_unknown_profile() -> None:
     profiles = ColorProfiles(
         hidden_bg=(20, 20, 20),
         revealed_bg=(220, 220, 220),
@@ -81,10 +84,8 @@ def test_classifier_defaults_to_hidden_for_unknown_profile() -> None:
         mine_bg=None,
     )
 
-    tile = TileClassifier(profiles).classify(
-        make_tile(background=(255, 0, 255)),
-        Coord(0, 0),
-    )
-
-    assert tile.state == TileState.HIDDEN
-    assert tile.adjacent_mines == 0
+    with pytest.raises(BoardReadError):
+        TileClassifier(profiles).classify(
+            make_tile(background=(255, 0, 255)),
+            Coord(0, 0),
+        )

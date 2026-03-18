@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal
 
 from minesweeper.app import App
@@ -39,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print external runtime progress and stop reasons",
     )
+    parser.add_argument(
+        "--debug-captures",
+        type=Path,
+        help="Write temporary raw external screenshots to the given directory",
+    )
     return parser
 
 
@@ -58,13 +64,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     mode = parse_mode(args.mode)
 
     if mode == "external":
-        from minesweeper.external.app import ExternalApp
-        from minesweeper.external.calibration import CalibrationWizard
-        from minesweeper.external.capture import ScreenCapture
+        from minesweeper.external import run as run_external
 
-        capture = ScreenCapture()
-        calibration = CalibrationWizard(capture).run()
-        ExternalApp(calibration, output=print if args.verbose else None).run()
+        run_external(
+            output=print if args.verbose else None,
+            debug_capture_dir=args.debug_captures,
+        )
         return 0
 
     try:

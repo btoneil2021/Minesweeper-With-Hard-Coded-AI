@@ -1,9 +1,12 @@
+from pathlib import Path
+
 import pytest
 
 from minesweeper.domain.tile import Tile
 from minesweeper.domain.types import Coord, TileState
 from minesweeper.external.board_reader import ScreenBoardReader
 from minesweeper.external.capture import ScreenRegion, TileSize
+from minesweeper.external.errors import BoardReadError
 from minesweeper.external.grid import TileGrid
 
 
@@ -14,6 +17,15 @@ class DummyBoardPixels:
     def getpixel(self, position: tuple[int, int]) -> tuple[int, int, int]:
         x, y = position
         return (x, y, 0)
+
+
+class SavingBoardPixels(DummyBoardPixels):
+    def __init__(self, width: int, height: int, saved_paths: list[Path]) -> None:
+        super().__init__(width, height)
+        self._saved_paths = saved_paths
+
+    def save(self, path: Path) -> None:
+        self._saved_paths.append(Path(path))
 
 
 class FakeCapture:
@@ -37,6 +49,11 @@ class RecordingClassifier:
             coord,
             Tile(coord=coord, state=TileState.HIDDEN, is_mine=False),
         )
+
+
+class ExplodingClassifier:
+    def classify(self, _pixels, _coord: Coord) -> Tile:
+        raise RuntimeError("boom")
 
 
 def test_refresh_classifies_every_tile_once_per_snapshot() -> None:
@@ -150,3 +167,41 @@ def test_tile_at_out_of_bounds_raises_key_error() -> None:
 
     with pytest.raises(KeyError):
         reader.tile_at(Coord(0, 1))
+
+
+def test_refresh_raises_board_read_error_when_any_tile_cannot_be_classified() -> None:
+    reader = ScreenBoardReader(
+        capture=FakeCapture(DummyBoardPixels(4, 4)),
+        classifier=ExplodingClassifier(),
+        board_region=ScreenRegion(0, 0, 4, 4),
+        tile_size=TileSize(4, 4),
+        width=1,
+        height=1,
+        num_mines=1,
+    )
+
+    with pytest.raises(BoardReadError, match="board refresh failed"):
+        reader.refresh()
+
+
+def test_refresh_writes_sequential_runtime_captures(tmp_path: Path) -> None:
+    saved_paths: list[Path] = []
+    capture = FakeCapture(SavingBoardPixels(4, 4, saved_paths))
+    reader = ScreenBoardReader(
+        capture=capture,
+        classifier=RecordingClassifier(),
+        board_region=ScreenRegion(0, 0, 4, 4),
+        tile_size=TileSize(4, 4),
+        width=1,
+        height=1,
+        num_mines=1,
+        debug_capture_dir=tmp_path,
+    )
+
+    reader.refresh()
+    reader.refresh()
+
+    assert saved_paths == [
+        tmp_path / "runtime" / "refresh_000.png",
+        tmp_path / "runtime" / "refresh_001.png",
+    ]

@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable
 from importlib import import_module
+from pathlib import Path
 from typing import Any, NamedTuple
 
 from minesweeper.domain.types import Coord
@@ -17,6 +18,7 @@ from minesweeper.external.classifier import (
     sample_background,
     sample_center,
 )
+from minesweeper.external.debug_capture import dump_capture
 from minesweeper.external.grid import TileGrid, detect_tile_grid
 
 
@@ -358,6 +360,24 @@ def _derive_dimension(
     raise ValueError("tile alignment appears inaccurate")
 
 
+def _warn_if_dimension_snapped(
+    axis_name: str,
+    total_pixels: int,
+    tile_pixels: int,
+    expected_tiles: int,
+    warn: Callable[[str], None],
+) -> None:
+    if tile_pixels <= 0:
+        return
+
+    ratio = total_pixels / tile_pixels
+    drift = abs(ratio - expected_tiles)
+    if drift <= QUIET_ALIGNMENT_TOLERANCE:
+        return
+    if drift <= SNAP_ALIGNMENT_TOLERANCE:
+        warn(f"{axis_name} looked slightly off ({ratio:.2f}); snapping to {expected_tiles} tiles.")
+
+
 def _normalize_grid(grid: TileGrid) -> tuple[TileGrid, ScreenRegion]:
     left_offset = grid.col_boundaries[0]
     top_offset = grid.row_boundaries[0]
@@ -421,9 +441,11 @@ class CalibrationWizard:
         profile_builder: Callable[[Any, Any, int, int, TileSize, TileGrid], ColorProfiles] | None = None,
         grid_detector: Callable[[Any, ScreenRegion], TileGrid] | None = None,
         output: Callable[[str], None] | None = None,
+        debug_capture_dir: Path | None = None,
     ) -> None:
         self._capture = capture
         self._output = output or print
+        self._debug_capture_dir = debug_capture_dir
         self._manual_read_point = read_point or _default_read_point
         if capture_point is not None:
             self._capture_point = capture_point
@@ -454,39 +476,54 @@ class CalibrationWizard:
         )
 
     def run(self) -> CalibrationResult:
-        board_top_left = self._capture_point("Click the top-left corner of the top-left tile")
-        board_bottom_right = self._capture_point(
-            "Click the bottom-right corner of the bottom-right tile"
-        )
-        board_region = ScreenRegion(
+        board_top_left = self._capture_point("Capture the top-left corner of the board.")
+        board_bottom_right = self._capture_point("Capture the bottom-right corner of the board.")
+        rough_board_region = ScreenRegion(
             left=board_top_left[0],
             top=board_top_left[1],
             width=board_bottom_right[0] - board_top_left[0],
             height=board_bottom_right[1] - board_top_left[1],
         )
 
-        tile_top_left = self._capture_point("Click the top-left corner of any single tile")
-        tile_bottom_right = self._capture_point(
-            "Click the bottom-right corner of that same tile"
+        rough_before_pixels = self._capture.grab(rough_board_region)
+        grid, board_region = _normalize_grid(
+            self._grid_detector(rough_before_pixels, rough_board_region)
         )
-        tile_size = TileSize(
-            width=tile_bottom_right[0] - tile_top_left[0],
-            height=tile_bottom_right[1] - tile_top_left[1],
-        )
-
-        self._derive_dimension("Board width", board_region.width, tile_size.width)
-        self._derive_dimension("Board height", board_region.height, tile_size.height)
-        rough_before_pixels = self._capture.grab(board_region)
-        grid, board_region = _normalize_grid(self._grid_detector(rough_before_pixels, board_region))
         width = grid.width
         height = grid.height
         tile_size = _grid_tile_size(grid)
-        num_mines = self._read_int("How many mines are on this board")
+        _warn_if_dimension_snapped(
+            "Board width",
+            rough_board_region.width,
+            tile_size.width,
+            width,
+            self._output,
+        )
+        _warn_if_dimension_snapped(
+            "Board height",
+            rough_board_region.height,
+            tile_size.height,
+            height,
+            self._output,
+        )
+        num_mines = self._read_int("Enter the mine count")
         before_pixels = self._capture.grab(board_region)
+        if self._debug_capture_dir is not None:
+            dump_capture(
+                before_pixels,
+                self._debug_capture_dir / "calibration" / "board_before_open.png",
+                warn=self._output,
+            )
         click_x, click_y = self._center_click_point(board_region, tile_size, width, height, grid)
         self._click(click_x, click_y)
         self._sleep(self._settle_delay_seconds)
         after_pixels = self._capture.grab(board_region)
+        if self._debug_capture_dir is not None:
+            dump_capture(
+                after_pixels,
+                self._debug_capture_dir / "calibration" / "board_after_open.png",
+                warn=self._output,
+            )
         profiles = self._profile_builder(before_pixels, after_pixels, width, height, tile_size, grid)
 
         return CalibrationResult(

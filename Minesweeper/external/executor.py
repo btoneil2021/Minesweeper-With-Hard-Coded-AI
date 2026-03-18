@@ -7,6 +7,7 @@ from typing import Any
 from minesweeper.domain.move import Move
 from minesweeper.domain.types import ActionType
 from minesweeper.external.capture import ScreenRegion, TileSize
+from minesweeper.external.errors import ExecutionError
 from minesweeper.external.grid import TileGrid
 
 
@@ -49,18 +50,15 @@ class ScreenMoveExecutor:
         if move.action == ActionType.REVEAL:
             self._resolve_left_click()(x, y)
             return
-
-        self._resolve_right_click()(x, y)
+        if move.action == ActionType.FLAG:
+            self._resolve_right_click()(x, y)
+            return
+        raise ExecutionError("unsupported move type")
 
     def execute_batch(self, moves: Sequence[Move]) -> None:
-        ordered_moves = sorted(
-            moves,
-            key=lambda move: 1 if move.action == ActionType.REVEAL else 0,
-        )
-
-        for index, move in enumerate(ordered_moves):
+        for index, move in enumerate(moves):
             self.execute(move)
-            if index < len(ordered_moves) - 1:
+            if index < len(moves) - 1:
                 self._resolve_delay()(self._click_delay_seconds)
 
     def _screen_point(self, move: Move) -> tuple[int, int] | None:

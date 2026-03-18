@@ -129,20 +129,34 @@ python -m minesweeper --mode hybrid --width 40 --height 40 --mines 300 --tile-si
 
 Use `--verbose` with external mode if you want runtime progress and explicit stop reasons printed to the terminal.
 
+For temporary live debugging of the capture layer, you can also use:
+
+```bash
+python -m minesweeper --mode external --debug-captures debug-captures
+```
+
+That writes:
+
+- `debug-captures/calibration/board_before_open.png`
+- `debug-captures/calibration/board_after_open.png`
+- `debug-captures/runtime/refresh_000.png`, `refresh_001.png`, ...
+
+Use that flag only when you want to inspect what raw board region the external runtime actually captured during calibration and refresh.
+
 The current calibration flow gathers:
 
 - the top-left and bottom-right corners of the whole board
-- the top-left and bottom-right corners of one tile
 - the total mine count for the board
 
 During calibration, the wizard now:
 
-- asks you to hold `Shift` and left-click each requested board or tile corner
+- asks you to hold `Shift` and left-click each requested board corner
 - falls back to manual `(x,y)` entry if guarded live capture is unavailable, cancelled, or times out
-- tolerates small board-geometry drift and may snap inferred tile counts with a warning
 - captures a rough hidden-board screenshot from the clicked board region
 - detects the board's actual row and column boundaries from that hidden screenshot
 - realigns the runtime board region to the detected tile grid instead of trusting the clicked corners exactly
+- derives a compatibility tile size from the detected grid instead of asking for a separate sample tile
+- may warn when the rough board bounds look slightly off relative to the detected grid
 - clicks the center tile once
 - waits for the board to settle
 - captures the board again
@@ -153,12 +167,13 @@ Important notes:
 
 - external mode is intended for web or desktop Minesweeper boards outside the local Pygame client
 - the implementation is test-first and additive, so the architecture is in place even though live desktop behavior will still benefit from manual tuning
-- the launcher path for external mode lazy-loads the external automation modules, but the project still depends on `pygame` overall because the local game client ships in the same package
+- the launcher path for external mode now delegates to the public `minesweeper.external.run(...)` facade, while the project still depends on `pygame` overall because the local game client ships in the same package
 - calibration still runs from terminal prompts rather than a dedicated GUI wizard, but point selection now prefers guarded live clicks
-- the clicked board and tile corners are now treated as coarse calibration hints; the hidden-board scan is the source of truth for runtime tile boundaries
+- the clicked board corners are treated as coarse calibration hints; the hidden-board scan is the source of truth for runtime tile boundaries
 - clearly incorrect calibration bounds still fail and should be recalibrated
 - calibration now performs an automatic first reveal, so the target board should be in a fresh hidden state when you start
 - runtime clicks now target the detected tile rectangles with a small inset instead of naive uniform-tile midpoints
+- external runtime preserves solver move order and prefers retry-then-stop over silently guessing when board reads fail
 - if screen capture or mouse-control dependencies are missing, live external mode will fail at runtime with a clear error
 - external runtime progress and stop reasons stay quiet unless you pass `--verbose`
 

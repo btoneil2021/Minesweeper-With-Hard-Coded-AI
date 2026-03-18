@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import ModuleType
 
 import minesweeper.__main__ as main_module
@@ -70,45 +71,20 @@ def test_main_runs_external_mode_via_lazy_imports(monkeypatch) -> None:
         def __init__(self, *_args, **_kwargs) -> None:
             raise AssertionError("local App should not be constructed in external mode")
 
-    class StubCapture:
-        def __init__(self) -> None:
-            recorded["capture_created"] = True
-
-    class StubWizard:
-        def __init__(self, capture) -> None:
-            recorded["wizard_capture"] = capture
-
-        def run(self):
-            recorded["wizard_ran"] = True
-            return "calibration-result"
-
-    class StubExternalApp:
-        def __init__(self, calibration, output=None) -> None:
-            recorded["calibration"] = calibration
-            recorded["output"] = output
-
-        def run(self) -> None:
-            recorded["external_ran"] = True
+    def stub_run(**kwargs):
+        recorded.update(kwargs)
+        recorded["external_ran"] = True
+        return "no moves available"
 
     monkeypatch.setattr(main_module, "App", UnexpectedApp)
 
-    capture_module = ModuleType("minesweeper.external.capture")
-    capture_module.ScreenCapture = StubCapture
-    calibration_module = ModuleType("minesweeper.external.calibration")
-    calibration_module.CalibrationWizard = StubWizard
-    app_module = ModuleType("minesweeper.external.app")
-    app_module.ExternalApp = StubExternalApp
-
-    monkeypatch.setitem(sys.modules, "minesweeper.external.capture", capture_module)
-    monkeypatch.setitem(sys.modules, "minesweeper.external.calibration", calibration_module)
-    monkeypatch.setitem(sys.modules, "minesweeper.external.app", app_module)
+    external_module = ModuleType("minesweeper.external")
+    external_module.run = stub_run
+    monkeypatch.setitem(sys.modules, "minesweeper.external", external_module)
 
     exit_code = main_module.main(["--mode", "external"])
 
     assert exit_code == 0
-    assert recorded["capture_created"] is True
-    assert recorded["wizard_ran"] is True
-    assert recorded["calibration"] == "calibration-result"
     assert recorded["output"] is None
     assert recorded["external_ran"] is True
 
@@ -120,44 +96,46 @@ def test_main_passes_verbose_output_to_external_mode(monkeypatch) -> None:
         def __init__(self, *_args, **_kwargs) -> None:
             raise AssertionError("local App should not be constructed in external mode")
 
-    class StubCapture:
-        def __init__(self) -> None:
-            recorded["capture_created"] = True
-
-    class StubWizard:
-        def __init__(self, capture) -> None:
-            recorded["wizard_capture"] = capture
-
-        def run(self):
-            recorded["wizard_ran"] = True
-            return "calibration-result"
-
-    class StubExternalApp:
-        def __init__(self, calibration, output=None) -> None:
-            recorded["calibration"] = calibration
-            recorded["output"] = output
-
-        def run(self) -> None:
-            recorded["external_ran"] = True
+    def stub_run(**kwargs):
+        recorded.update(kwargs)
+        recorded["external_ran"] = True
+        return "no moves available"
 
     monkeypatch.setattr(main_module, "App", UnexpectedApp)
 
-    capture_module = ModuleType("minesweeper.external.capture")
-    capture_module.ScreenCapture = StubCapture
-    calibration_module = ModuleType("minesweeper.external.calibration")
-    calibration_module.CalibrationWizard = StubWizard
-    app_module = ModuleType("minesweeper.external.app")
-    app_module.ExternalApp = StubExternalApp
-
-    monkeypatch.setitem(sys.modules, "minesweeper.external.capture", capture_module)
-    monkeypatch.setitem(sys.modules, "minesweeper.external.calibration", calibration_module)
-    monkeypatch.setitem(sys.modules, "minesweeper.external.app", app_module)
+    external_module = ModuleType("minesweeper.external")
+    external_module.run = stub_run
+    monkeypatch.setitem(sys.modules, "minesweeper.external", external_module)
 
     exit_code = main_module.main(["--mode", "external", "--verbose"])
 
     assert exit_code == 0
-    assert recorded["capture_created"] is True
-    assert recorded["wizard_ran"] is True
-    assert recorded["calibration"] == "calibration-result"
     assert recorded["output"] is print
+    assert recorded["external_ran"] is True
+
+
+def test_main_passes_debug_capture_dir_to_external_mode(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    class UnexpectedApp:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise AssertionError("local App should not be constructed in external mode")
+
+    def stub_run(**kwargs):
+        recorded.update(kwargs)
+        recorded["external_ran"] = True
+        return "no moves available"
+
+    monkeypatch.setattr(main_module, "App", UnexpectedApp)
+
+    external_module = ModuleType("minesweeper.external")
+    external_module.run = stub_run
+    monkeypatch.setitem(sys.modules, "minesweeper.external", external_module)
+
+    exit_code = main_module.main(
+        ["--mode", "external", "--debug-captures", "tmp/debug-captures"]
+    )
+
+    assert exit_code == 0
+    assert recorded["debug_capture_dir"] == Path("tmp/debug-captures")
     assert recorded["external_ran"] is True

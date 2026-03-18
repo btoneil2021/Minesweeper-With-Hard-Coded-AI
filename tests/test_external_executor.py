@@ -1,5 +1,8 @@
+import pytest
+
 from minesweeper.domain.move import Move
 from minesweeper.domain.types import ActionType, Coord
+from minesweeper.external.errors import ExecutionError
 from minesweeper.external.capture import ScreenRegion, TileSize
 from minesweeper.external.executor import ScreenMoveExecutor
 from minesweeper.external.grid import TileGrid
@@ -22,7 +25,7 @@ def test_execute_targets_tile_center_for_reveal() -> None:
     assert delays == []
 
 
-def test_execute_batch_orders_flags_before_reveals() -> None:
+def test_execute_batch_preserves_solver_order() -> None:
     clicks: list[tuple[str, int, int]] = []
     delays: list[float] = []
     executor = ScreenMoveExecutor(
@@ -38,14 +41,14 @@ def test_execute_batch_orders_flags_before_reveals() -> None:
         [
             Move(ActionType.REVEAL, Coord(1, 1)),
             Move(ActionType.FLAG, Coord(0, 0)),
-            Move(ActionType.UNFLAG, Coord(1, 0)),
+            Move(ActionType.REVEAL, Coord(1, 0)),
         ]
     )
 
     assert clicks == [
-        ("right", 5, 5),
-        ("right", 15, 5),
         ("left", 15, 15),
+        ("right", 5, 5),
+        ("left", 15, 5),
     ]
     assert delays == [0.04, 0.04]
 
@@ -83,3 +86,15 @@ def test_execute_skips_positions_outside_board_region() -> None:
     executor.execute(Move(ActionType.REVEAL, Coord(2, 2)))
 
     assert clicks == []
+
+
+def test_execute_raises_execution_error_for_unsupported_action() -> None:
+    executor = ScreenMoveExecutor(
+        board_region=ScreenRegion(0, 0, 10, 10),
+        tile_size=TileSize(10, 10),
+        left_click=lambda _x, _y: None,
+        right_click=lambda _x, _y: None,
+    )
+
+    with pytest.raises(ExecutionError, match="unsupported move type"):
+        executor.execute(Move(ActionType.UNFLAG, Coord(0, 0)))
